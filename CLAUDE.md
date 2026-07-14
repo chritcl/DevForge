@@ -1,65 +1,44 @@
 # DevForge Project Instructions
 
-## Product
+## 产品
 
-DevForge is a Windows-first, local-first developer knowledge and
-AI task workbench.
+DevForge — 面向开发者的本地知识库、跨项目代码检索与受控 AI 编程工作台。
 
-The product specification is in `docs/product/vision.md`.
+产品规格：[docs/product/vision.md](docs/product/vision.md)
 
-## Core architecture
+## 技术栈
 
-- Desktop host: Tauri 2
-- Frontend: React + TypeScript
-- Backend: Rust workspace
-- Business data source of truth: SQLite
-- Lexical search: Tantivy
-- Code parsing: Tree-sitter
-- Semantic enhancement: optional LSP
-- AI changes require explicit user approval
+- 桌面宿主：Tauri 2
+- 前端：React + TypeScript
+- 后端：Rust Workspace
+- 数据库：SQLite（唯一事实来源）
+- 全文搜索：Tantivy
+- 代码解析：Tree-sitter
+- 语义增强：可选 LSP
 
-Read `docs/architecture/overview.md` before making architectural changes.
+架构总览：[docs/architecture/overview.md](docs/architecture/overview.md)
 
-## Hard boundaries
+## 命令
 
-- Domain crates must not depend on Tauri.
-- React must not access SQLite or the filesystem directly.
-- Tauri commands expose application use cases, not database CRUD.
-- AI cannot write files or execute commands without Policy Engine approval.
-- Search indexes are rebuildable; SQLite is the source of truth.
-- Windows is the first supported platform, but core crates remain cross-platform.
+| 操作 | 命令 |
+|------|------|
+| 前端安装 | `pnpm install` |
+| 前端类型检查 | `pnpm typecheck` |
+| 前端测试 | `pnpm test` |
+| Rust 格式检查 | `cargo fmt --check` |
+| Rust Lint | `cargo clippy --workspace --all-targets -- -D warnings` |
+| Rust 测试 | `cargo test --workspace` |
 
-## Development workflow
+## 当前阶段
 
-1. Read the current phase specification.
-2. Explore the existing code before proposing changes.
-3. Write or update an implementation plan.
-4. Implement one independently testable task at a time.
-5. Write failing tests before implementation.
-6. Run formatting, linting and relevant tests.
-7. Review the diff before committing.
-8. Update the relevant design document when a decision changes.
+当前实施阶段：[docs/phases/phase-0-foundation.md](docs/phases/phase-0-foundation.md)
 
-## Commands
+当前已批准计划：[docs/plans/phase-0-foundation-plan.md](docs/plans/phase-0-foundation-plan.md)
 
-- Frontend install: `pnpm install`
-- Frontend check: `pnpm typecheck`
-- Frontend test: `pnpm test`
-- Rust format: `cargo fmt --check`
-- Rust lint: `cargo clippy --workspace --all-targets -- -D warnings`
-- Rust test: `cargo test --workspace`
+## 规则与 Skills
 
-## Encoding and tooling
+全局规则和路径规则在 `.claude/rules/` 中，按文件路径自动加载。
 
-- Use UTF-8 without BOM.
-- Use Chinese comments only where comments add real value.
-- Prefer `pnpm` over npm and yarn.
-- Do not commit secrets, local paths or credentials.
+工作流 Skills 在 `.claude/skills/` 中，按需调用。
 
-## Current phase
-
-Current implementation phase:
-`docs/phases/phase-0-foundation.md`
-
-Current approved plan:
-`docs/plans/phase-0-foundation-plan.md`
+详见 [README.md](README.md) 的「AI 协作配置」章节。
