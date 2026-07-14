@@ -87,25 +87,29 @@ chore: 初始化 pnpm workspace
 
 **目标**：`cargo build --workspace` 通过。只创建当前纵向切片有实际需求的 crate。
 
-**设计决策**：Phase 0 只创建 4 个 crate。`devforge-runtime` 等出现 TaskSupervisor 再创建；`devforge-shared` 容易变成垃圾桶，暂缓。错误类型暂放 `devforge-domain`，跨 crate 共享时再拆。
+**设计决策**：
+- Phase 0 只创建 3 个 crate：`devforge-application`、`devforge-storage`、`devforge-platform`
+- `devforge-domain` 延后到 Phase 1，等真正的领域实体（Workspace、Document）出现时再创建
+- `AppInfo`、`DbStatus` 是应用诊断 DTO，放在 `devforge-application`
+- 各 crate 定义自己的错误类型，不使用统一的 AppError
 
 ### 精确文件
 
 | 文件 | 职责 |
 |------|------|
 | `Cargo.toml` | workspace 根，定义 members、workspace.dependencies |
-| `crates/devforge-domain/Cargo.toml` | 领域模型 crate |
-| `crates/devforge-domain/src/lib.rs` | crate 入口，导出 app_info 和 error 模块 |
-| `crates/devforge-domain/src/app_info.rs` | AppInfo 领域类型 |
-| `crates/devforge-domain/src/error.rs` | 统一错误枚举 |
 | `crates/devforge-application/Cargo.toml` | 应用服务 crate |
 | `crates/devforge-application/src/lib.rs` | crate 入口 |
+| `crates/devforge-application/src/app_info.rs` | AppInfo、DbStatus 类型定义 |
 | `crates/devforge-application/src/ports.rs` | Port trait 定义 |
+| `crates/devforge-application/src/error.rs` | ApplicationError |
 | `crates/devforge-application/src/get_app_info.rs` | get_app_info 用例 |
 | `crates/devforge-storage/Cargo.toml` | 存储 crate |
 | `crates/devforge-storage/src/lib.rs` | crate 入口 |
+| `crates/devforge-storage/src/error.rs` | StorageError |
 | `crates/devforge-platform/Cargo.toml` | 平台适配 crate |
 | `crates/devforge-platform/src/lib.rs` | crate 入口 |
+| `crates/devforge-platform/src/error.rs` | PlatformError |
 
 ### 根 Cargo.toml
 
@@ -113,7 +117,6 @@ chore: 初始化 pnpm workspace
 [workspace]
 resolver = "2"
 members = [
-    "crates/devforge-domain",
     "crates/devforge-application",
     "crates/devforge-storage",
     "crates/devforge-platform",
@@ -129,53 +132,53 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+async-trait = "0.1"
+specta = { version = "2", features = ["serde"] }
 
 # 内部 crate
-devforge-domain = { path = "crates/devforge-domain" }
 devforge-application = { path = "crates/devforge-application" }
 devforge-storage = { path = "crates/devforge-storage" }
 devforge-platform = { path = "crates/devforge-platform" }
 ```
 
-### devforge-domain/src/lib.rs
+### devforge-application/Cargo.toml
+
+```toml
+[package]
+name = "devforge-application"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+serde = { workspace = true }
+specta = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+```
+
+### devforge-application/src/lib.rs
 
 ```rust
 pub mod app_info;
 pub mod error;
+pub mod get_app_info;
+pub mod ports;
 ```
 
-### devforge-domain/src/error.rs
-
-```rust
-use thiserror::Error;
-
-/// 统一应用错误
-///
-/// Phase 0 暂放 domain 层。当出现跨 crate 共享需求时，
-/// 拆出 devforge-shared。
-#[derive(Debug, Error)]
-pub enum AppError {
-    #[error("存储错误: {0}")]
-    Storage(String),
-
-    #[error("配置错误: {0}")]
-    Config(String),
-
-    #[error("平台错误: {0}")]
-    Platform(String),
-
-    #[error("未找到: {0}")]
-    NotFound(String),
-}
-```
-
-### devforge-domain/src/app_info.rs
+### devforge-application/src/app_info.rs
 
 ```rust
 use serde::{Deserialize, Serialize};
+use specta::Type;
 
-/// 应用基础信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// 应用基础信息（诊断 DTO）
+///
+/// 用于向 UI 展示应用状态，不是领域实体。
+/// derive Type 用于 specta 自动生成 TypeScript 类型。
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct AppInfo {
     pub version: &'static str,
     pub data_dir: String,
@@ -183,34 +186,68 @@ pub struct AppInfo {
 }
 
 /// 数据库状态
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// specta 自动映射为 TypeScript tagged union：
+/// `{ type: "NotInitialized" } | { type: "Ready"; migration_version: number } | ...`
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Type)]
 pub enum DbStatus {
+    #[default]
     NotInitialized,
     Ready { migration_version: u32 },
     Error { message: String },
 }
 ```
 
+### devforge-application/src/error.rs
+
+```rust
+use thiserror::Error;
+
+/// 应用层错误
+#[derive(Debug, Error)]
+pub enum ApplicationError {
+    #[error("端口错误: {0}")]
+    Port(String),
+
+    #[error("用例执行失败: {0}")]
+    UseCase(String),
+}
+```
+
 ### devforge-application/src/ports.rs
 
 ```rust
-use devforge_domain::app_info::{AppInfo, DbStatus};
+use async_trait::async_trait;
+use crate::app_info::{AppInfo, DbStatus};
 
 /// 应用信息查询端口
 pub trait AppInfoProvider: Send + Sync {
     fn get_app_info(&self) -> AppInfo;
 }
 
-/// 数据库状态查询端口
+/// 数据库状态查询端口（异步）
+///
+/// 使用 async 因为 SQLx 查询天然是异步的。
+#[async_trait]
 pub trait DatabaseStatusProvider: Send + Sync {
-    fn status(&self) -> DbStatus;
+    async fn status(&self) -> DbStatus;
+}
+
+/// 默认数据库状态（Task 4 使用，Task 7 替换为真实实现）
+pub struct NotInitializedDbStatus;
+
+#[async_trait]
+impl DatabaseStatusProvider for NotInitializedDbStatus {
+    async fn status(&self) -> DbStatus {
+        DbStatus::NotInitialized
+    }
 }
 ```
 
 ### devforge-application/src/get_app_info.rs
 
 ```rust
-use devforge_domain::app_info::AppInfo;
+use crate::app_info::AppInfo;
 use crate::ports::{AppInfoProvider, DatabaseStatusProvider};
 
 /// 获取应用信息用例
@@ -224,9 +261,10 @@ impl<P: AppInfoProvider, D: DatabaseStatusProvider> GetAppInfo<P, D> {
         Self { app_info, db_status }
     }
 
-    pub fn execute(&self) -> AppInfo {
+    /// 执行用例，返回应用信息
+    pub async fn execute(&self) -> AppInfo {
         let mut info = self.app_info.get_app_info();
-        info.db_status = self.db_status.status();
+        info.db_status = self.db_status.status().await;
         info
     }
 }
@@ -234,7 +272,8 @@ impl<P: AppInfoProvider, D: DatabaseStatusProvider> GetAppInfo<P, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use devforge_domain::app_info::DbStatus;
+    use crate::app_info::DbStatus;
+    use async_trait::async_trait;
 
     struct MockAppInfo;
     impl AppInfoProvider for MockAppInfo {
@@ -248,19 +287,98 @@ mod tests {
     }
 
     struct MockDbReady;
+    #[async_trait]
     impl DatabaseStatusProvider for MockDbReady {
-        fn status(&self) -> DbStatus {
+        async fn status(&self) -> DbStatus {
             DbStatus::Ready { migration_version: 1 }
         }
     }
 
-    #[test]
-    fn get_app_info_merges_db_status() {
+    #[tokio::test]
+    async fn get_app_info_merges_db_status() {
         let use_case = GetAppInfo::new(MockAppInfo, MockDbReady);
-        let info = use_case.execute();
+        let info = use_case.execute().await;
         assert_eq!(info.version, "0.1.0");
         assert!(matches!(info.db_status, DbStatus::Ready { .. }));
     }
+}
+```
+
+### devforge-storage/Cargo.toml
+
+```toml
+[package]
+name = "devforge-storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+```
+
+### devforge-storage/src/lib.rs
+
+```rust
+pub mod error;
+```
+
+### devforge-storage/src/error.rs
+
+```rust
+use thiserror::Error;
+
+/// 存储层错误
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("数据库连接失败: {0}")]
+    Connection(String),
+
+    #[error("迁移失败: {0}")]
+    Migration(String),
+
+    #[error("查询失败: {0}")]
+    Query(String),
+
+    #[error("配置错误: {0}")]
+    Config(String),
+}
+```
+
+### devforge-platform/Cargo.toml
+
+```toml
+[package]
+name = "devforge-platform"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+```
+
+### devforge-platform/src/lib.rs
+
+```rust
+pub mod error;
+```
+
+### devforge-platform/src/error.rs
+
+```rust
+use thiserror::Error;
+
+/// 平台层错误
+#[derive(Debug, Error)]
+pub enum PlatformError {
+    #[error("系统路径错误: {0}")]
+    Path(String),
+
+    #[error("系统调用失败: {0}")]
+    SystemCall(String),
+
+    #[error("权限错误: {0}")]
+    Permission(String),
 }
 ```
 
@@ -278,7 +396,7 @@ cargo fmt --check
 ### 提交信息
 
 ```
-feat(rust): 创建 Rust workspace 和最小 crate 骨架
+feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
 ```
 
 ---
@@ -325,7 +443,6 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-shell": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router": "^7"
@@ -359,11 +476,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-shell = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
-devforge-domain = { workspace = true }
 devforge-application = { workspace = true }
+devforge-platform = { workspace = true }
 ```
 
 ### apps/desktop/src-tauri/tauri.conf.json
@@ -390,9 +506,7 @@ devforge-application = { workspace = true }
         "fullscreen": false
       }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": {}
   }
 }
 ```
@@ -405,9 +519,31 @@ devforge-application = { workspace = true }
   "description": "默认窗口能力",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "shell:allow-open"
+    "core:default"
   ]
+}
+```
+
+### apps/desktop/src-tauri/src/lib.rs
+
+```rust
+/// Tauri 应用入口（Phase 0 最小版本）
+///
+/// Task 4 会添加 commands 和 state。
+pub fn run() {
+    tauri::Builder::default()
+        .run(tauri::generate_context!())
+        .expect("启动 Tauri 应用失败");
+}
+```
+
+### apps/desktop/src-tauri/src/main.rs
+
+```rust
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+fn main() {
+    devforge_desktop_lib::run();
 }
 ```
 
@@ -429,37 +565,143 @@ feat(desktop): 创建最小 Tauri + React 应用
 
 ---
 
-## Task 4：建立 IPC 层 — get_app_info 命令
+## Task 4：建立 IPC 层 — get_app_info 命令（specta 类型生成）
 
 **依赖**：Task 2, Task 3
 
-**目标**：React 能通过 Tauri Command 调用 Rust 并获取 AppInfo。
+**目标**：React 能通过 Tauri Command 调用 Rust 并获取 AppInfo，TypeScript 类型由 specta 从 Rust 自动推导。
+
+**架构决策**：
+- Tauri Command 只调用 Application Use Case，不自行构造业务逻辑
+- TypeScript 类型由 specta 从 Rust `#[derive(Type)]` 自动生成，不是手写 DTO
+- 前端通过 specta 生成的绑定调用命令，类型在编译期保证一致
+
+### 调用链
+
+```text
+Tauri get_app_info Command（#[specta::specta]）
+        ↓
+GetAppInfo Application Service
+        ↓
+PlatformInfoProvider + DatabaseStatusProvider
+        ↓
+Platform / Storage Adapter
+        ↓
+specta 自动生成 TypeScript 类型和命令绑定
+```
+
+### 类型生成流程
+
+```text
+devforge-application/src/app_info.rs
+  #[derive(specta::Type)] on AppInfo, DbStatus
+        ↓
+apps/desktop/src-tauri/src/commands.rs
+  #[specta::specta] on get_app_info
+        ↓
+apps/desktop/src-tauri/src/lib.rs
+  tauri_specta::export_commands! → src/bindings/index.ts
+        ↓
+前端直接 import { commands } from "./bindings"
+  类型安全，无需手写 invokeCommand<T>()
+```
 
 ### 精确文件
 
 | 文件 | 职责 |
 |------|------|
-| `apps/desktop/src-tauri/src/commands.rs` | Tauri Command 定义 |
-| `apps/desktop/src/lib.rs` | 注册 command |
-| `apps/desktop/src/types/generated.ts` | 从 Rust 生成的 TS 类型（手动维护阶段） |
-| `apps/desktop/src/api/client.ts` | IPC 客户端封装 |
-| `apps/desktop/src/api/app.ts` | app 相关 API |
+| `crates/devforge-platform/src/app_info.rs` | PlatformInfoProvider 实现 |
+| `apps/desktop/src-tauri/src/commands.rs` | Tauri Command 定义（带 specta 注解） |
+| `apps/desktop/src-tauri/src/state.rs` | 管理 Application Service |
+| `apps/desktop/src-tauri/src/lib.rs` | 注册 command、state、specta 导出 |
+| `apps/desktop/src-tauri/Cargo.toml` | 添加 specta 依赖 |
+| `apps/desktop/src/bindings/index.ts` | specta 生成的类型和命令绑定（提交到 git） |
+
+### crates/devforge-platform/src/app_info.rs
+
+```rust
+use devforge_application::ports::AppInfoProvider;
+use devforge_application::app_info::AppInfo;
+
+/// 平台信息提供者
+///
+/// 从操作系统获取应用基础信息。
+pub struct PlatformInfo;
+
+impl PlatformInfo {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl AppInfoProvider for PlatformInfo {
+    fn get_app_info(&self) -> AppInfo {
+        AppInfo {
+            version: env!("CARGO_PKG_VERSION"),
+            data_dir: dirs::data_dir()
+                .map(|p| p.join("devforge").to_string_lossy().to_string())
+                .unwrap_or_default(),
+            db_status: Default::default(), // 由 DatabaseStatusProvider 覆盖
+        }
+    }
+}
+```
+
+### crates/devforge-platform/Cargo.toml（补充依赖）
+
+```toml
+[dependencies]
+devforge-application = { workspace = true }
+dirs = "6"
+```
+
+### crates/devforge-platform/src/lib.rs（更新）
+
+```rust
+pub mod app_info;
+pub mod error;
+```
+
+### apps/desktop/src-tauri/src/state.rs
+
+```rust
+use devforge_application::get_app_info::GetAppInfo;
+use devforge_platform::app_info::PlatformInfo;
+use devforge_application::ports::NotInitializedDbStatus;
+
+/// 应用全局状态
+///
+/// 持有 Application Service，Tauri Command 通过此状态调用业务逻辑。
+pub struct AppState {
+    pub get_app_info: GetAppInfo<PlatformInfo, NotInitializedDbStatus>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        let platform_info = PlatformInfo::new();
+        let db_status = NotInitializedDbStatus;
+        Self {
+            get_app_info: GetAppInfo::new(platform_info, db_status),
+        }
+    }
+}
+```
 
 ### apps/desktop/src-tauri/src/commands.rs
 
 ```rust
-use devforge_domain::app_info::{AppInfo, DbStatus};
+use tauri::State;
+use devforge_application::app_info::AppInfo;
+use crate::state::AppState;
 
 /// 获取应用信息
+///
+/// specta 从此函数签名自动推导 TypeScript 类型。
+/// State 参数由 Tauri 注入，specta 自动排除，不出现在 TS 签名中。
+#[specta::specta]
 #[tauri::command]
-pub fn get_app_info() -> AppInfo {
-    AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
-        data_dir: dirs::data_dir()
-            .map(|p| p.join("devforge").to_string_lossy().to_string())
-            .unwrap_or_default(),
-        db_status: DbStatus::NotInitialized,
-    }
+pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
+    state.get_app_info.execute().await
 }
 ```
 
@@ -467,10 +709,33 @@ pub fn get_app_info() -> AppInfo {
 
 ```rust
 mod commands;
+mod state;
+
+use state::AppState;
+
+/// 导出 specta 生成的 TypeScript 绑定
+///
+/// 运行时自动将 Rust 类型和命令签名写入 src/bindings/index.ts。
+/// 该文件提交到 git，前端直接 import 使用。
+fn export_bindings() {
+    let result = tauri_specta::js::export_commands(
+        tauri::Builder::default()
+            .invoke_handler(tauri::generate_handler![
+                commands::get_app_info,
+            ]),
+        &["src", "bindings", "index.ts"],
+    );
+    if let Err(e) = result {
+        eprintln!("导出 TypeScript 绑定失败: {e}");
+    }
+}
 
 pub fn run() {
+    let app_state = AppState::new();
+
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_specta::init())
+        .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
         ])
@@ -485,13 +750,32 @@ pub fn run() {
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // 开发模式下导出 TypeScript 绑定
+    #[cfg(debug_assertions)]
+    devforge_desktop_lib::export_bindings();
+
     devforge_desktop_lib::run();
 }
 ```
 
-### apps/desktop/src/types/generated.ts
+### apps/desktop/src-tauri/Cargo.toml（补充依赖）
+
+```toml
+[dependencies]
+dirs = "6"
+devforge-application = { workspace = true }
+devforge-platform = { workspace = true }
+specta = { workspace = true }
+tauri-specta-plugin = { version = "2", features = ["javascript"] }
+```
+
+### apps/desktop/src/bindings/index.ts（specta 生成）
+
+此文件由 specta 自动生成，提交到 git 作为类型契约。前端直接 import 使用。
 
 ```typescript
+/** specta 自动生成，请勿手动编辑 */
+
 /** 数据库状态 */
 export type DbStatus =
   | { type: "NotInitialized" }
@@ -504,60 +788,39 @@ export interface AppInfo {
   data_dir: string;
   db_status: DbStatus;
 }
-```
-
-### apps/desktop/src/api/client.ts
-
-```typescript
-import { invoke } from "@tauri-apps/api/core";
-
-/**
- * 类型安全的 IPC 调用封装
- * 所有 Tauri Command 调用必须通过此函数
- */
-export async function invokeCommand<T>(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
-  return invoke<T>(command, args);
-}
-```
-
-### apps/desktop/src/api/app.ts
-
-```typescript
-import { invokeCommand } from "./client";
-import type { AppInfo } from "../types/generated";
 
 /** 获取应用信息 */
-export function getAppInfo(): Promise<AppInfo> {
-  return invokeCommand<AppInfo>("get_app_info");
-}
+export const commands = {
+  async getAppInfo(): Promise<AppInfo> {
+    return await window.__TAURI__.core.invoke("get_app_info");
+  },
+};
 ```
 
-### apps/desktop/src-tauri/Cargo.toml 补充依赖
-
-```toml
-[dependencies]
-dirs = "6"
-```
+**重要**：以上内容仅为示意，实际文件由 specta 在 `cargo tauri dev` 时自动生成。如果生成结果与示意不同，以 specta 输出为准。
 
 ### 验证命令
 
 ```powershell
+cargo test -p devforge-application
+cargo test -p devforge-platform
+cargo clippy --workspace --all-targets -- -D warnings
 cd apps/desktop
+pnpm install
 pnpm typecheck
 pnpm tauri dev
-# 在 DevTools Console 中测试:
-# await invoke("get_app_info")
 ```
 
-**预期结果**：`invoke("get_app_info")` 返回包含 version、data_dir、db_status 的对象。
+**验证步骤**：
+1. `cargo tauri dev` 后检查 `src/bindings/index.ts` 是否生成
+2. 前端 `pnpm typecheck` 通过
+3. `commands.getAppInfo()` 返回正确的 AppInfo
+4. 任意修改 Rust AppInfo 字段后，`pnpm typecheck` 应报错（类型一致性验证）
 
 ### 提交信息
 
 ```
-feat(ipc): 建立 get_app_info Tauri Command 和 IPC 客户端层
+feat(ipc): 使用 specta 建立 Rust → TypeScript 类型生成管线
 ```
 
 ---
@@ -566,7 +829,7 @@ feat(ipc): 建立 get_app_info Tauri Command 和 IPC 客户端层
 
 **依赖**：Task 4
 
-**目标**：应用启动后自动获取并展示 AppInfo。
+**目标**：应用启动后自动获取并展示 AppInfo，类型来自 specta 生成的绑定。
 
 ### 精确文件
 
@@ -575,7 +838,13 @@ feat(ipc): 建立 get_app_info Tauri Command 和 IPC 客户端层
 | `apps/desktop/src/App.tsx` | 根组件，展示应用信息 |
 | `apps/desktop/src/components/HealthStatus.tsx` | 健康状态组件 |
 | `apps/desktop/src/hooks/useAppInfo.ts` | AppInfo 查询 hook |
+| `apps/desktop/src/queryKeys.ts` | 集中式类型化 Query Key 工厂 |
 | `apps/desktop/src/main.tsx` | 更新：挂载 QueryClientProvider |
+
+### 类型来源
+
+所有 TypeScript 类型从 `src/bindings/index.ts` 导入，由 specta 从 Rust 自动生成。
+不使用手写 DTO，不使用 `invokeCommand<T>()` 类型断言。
 
 ### 依赖安装
 
@@ -584,17 +853,36 @@ cd apps/desktop
 pnpm add @tanstack/react-query
 ```
 
+### apps/desktop/src/queryKeys.ts
+
+```typescript
+/**
+ * 集中式类型化 Query Key 工厂
+ *
+ * 所有 Query Key 必须通过此工厂创建，确保：
+ * - 全局唯一，避免 key 冲突
+ * - 类型安全，IDE 自动补全
+ * - 重命名时全局编译报错
+ */
+export const appKeys = {
+  all: ["app"] as const,
+  info: () => [...appKeys.all, "info"] as const,
+};
+```
+
 ### apps/desktop/src/hooks/useAppInfo.ts
 
 ```typescript
 import { useQuery } from "@tanstack/react-query";
-import { getAppInfo } from "../api/app";
-import type { AppInfo } from "../types/generated";
+import { commands, type AppInfo } from "../bindings";
+import { appKeys } from "../queryKeys";
 
 export function useAppInfo() {
   return useQuery<AppInfo>({
-    queryKey: ["app-info"],
-    queryFn: getAppInfo,
+    queryKey: appKeys.info(),
+    queryFn: () => commands.getAppInfo(),
+    // 本地 IPC 调用，非网络请求；配置错误不应盲目重试
+    retry: false,
     staleTime: 30_000,
   });
 }
@@ -603,7 +891,7 @@ export function useAppInfo() {
 ### apps/desktop/src/components/HealthStatus.tsx
 
 ```typescript
-import type { DbStatus } from "../types/generated";
+import type { DbStatus } from "../bindings";
 
 interface HealthStatusProps {
   dbStatus: DbStatus;
@@ -682,12 +970,14 @@ pnpm typecheck
 pnpm tauri dev
 ```
 
-**预期结果**：窗口显示 "DevForge"、版本号、数据目录、数据库状态（"未初始化"）。
+**验证步骤**：
+1. 窗口显示 "DevForge"、版本号、数据目录、数据库状态（"未初始化"）
+2. 修改 Rust `AppInfo` 任意字段后重新 `cargo tauri dev`，前端 `pnpm typecheck` 应报错
 
 ### 提交信息
 
 ```
-feat(ui): React 展示 AppInfo 和健康状态
+feat(ui): React 使用 specta 生成的绑定展示 AppInfo
 ```
 
 ---
@@ -698,6 +988,8 @@ feat(ui): React 展示 AppInfo 和健康状态
 
 **目标**：`devforge-storage` 能打开 SQLite 数据库、运行迁移、返回 DbStatus。
 
+**架构决策**：使用 SQLx + SqlitePool（符合架构文档规定），而非 rusqlite 单连接模型。SqlitePool 可克隆、支持异步、天然适合 Tauri State 持有。
+
 ### 精确文件
 
 | 文件 | 职责 |
@@ -706,20 +998,19 @@ feat(ui): React 展示 AppInfo 和健康状态
 | `crates/devforge-storage/src/lib.rs` | 导出模块 |
 | `crates/devforge-storage/src/pool.rs` | SQLite 连接池管理 |
 | `crates/devforge-storage/src/migrator.rs` | Migration 运行器 |
-| `crates/devforge-storage/migrations/001_init.sql` | 第一条 migration |
+| `crates/devforge-storage/migrations/20240101000001_init.sql` | 第一条 migration |
 | `crates/devforge-storage/src/status.rs` | DbStatus 查询实现 |
 
 ### Cargo.toml 补充依赖
 
 ```toml
 [dependencies]
-devforge-domain = { workspace = true }
-rusqlite = { version = "0.35", features = ["bundled"] }
-rusqlite_migration = "1"
+sqlx = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 ```
 
-### migrations/001_init.sql
+### migrations/20240101000001_init.sql
 
 ```sql
 -- 应用元数据表
@@ -745,30 +1036,55 @@ CREATE TABLE IF NOT EXISTS workspace (
 
 ```rust
 use std::path::Path;
-use rusqlite::Connection;
-use devforge_domain::error::AppError;
+use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use crate::error::StorageError;
 
-/// SQLite 连接管理
+/// SQLite 连接池管理
+///
+/// 使用 SqlitePool 实现连接池化，支持并发访问和异步操作。
+/// SqlitePool 可克隆，适合放入 Tauri State 供多个 Command 共享。
 pub struct Database {
-    conn: Connection,
+    pool: SqlitePool,
 }
 
 impl Database {
-    /// 打开数据库并启用 WAL 模式
-    pub fn open(db_path: &Path) -> Result<Self, AppError> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| AppError::Storage(format!("打开数据库失败: {e}")))?;
+    /// 打开数据库并配置 SQLite 参数
+    ///
+    /// 配置项：
+    /// - WAL 模式：提升并发读写性能
+    /// - foreign_keys：启用外键约束
+    /// - busy_timeout：避免锁竞争时立即失败
+    pub async fn open(db_path: &Path) -> Result<Self, StorageError> {
+        let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
 
-        // 启用 WAL 模式
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
-            .map_err(|e| AppError::Storage(format!("设置 WAL 失败: {e}")))?;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect(&db_url)
+            .await
+            .map_err(|e| StorageError::Connection(format!("打开数据库失败: {e}")))?;
 
-        Ok(Self { conn })
+        // 配置 SQLite 参数
+        sqlx::query("PRAGMA journal_mode=WAL")
+            .execute(&pool)
+            .await
+            .map_err(|e| StorageError::Config(format!("设置 WAL 失败: {e}")))?;
+
+        sqlx::query("PRAGMA foreign_keys=ON")
+            .execute(&pool)
+            .await
+            .map_err(|e| StorageError::Config(format!("设置 foreign_keys 失败: {e}")))?;
+
+        sqlx::query("PRAGMA busy_timeout=5000")
+            .execute(&pool)
+            .await
+            .map_err(|e| StorageError::Config(format!("设置 busy_timeout 失败: {e}")))?;
+
+        Ok(Self { pool })
     }
 
-    /// 获取底层连接引用
-    pub fn connection(&self) -> &Connection {
-        &self.conn
+    /// 获取连接池引用
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 }
 ```
@@ -776,67 +1092,79 @@ impl Database {
 ### crates/devforge-storage/src/migrator.rs
 
 ```rust
-use rusqlite::Connection;
-use rusqlite_migration::Migrations;
-use devforge_domain::error::AppError;
-
-/// 获取所有迁移
-pub fn migrations() -> Migrations<'static> {
-    Migrations::from_iter([
-        rusqlite_migration::Migration::new(
-            "001_init",
-            include_str!("../migrations/001_init.sql"),
-        ),
-    ])
-}
+use sqlx::SqlitePool;
+use crate::error::StorageError;
 
 /// 运行所有待执行迁移
-pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
-    let mut migs = migrations();
-    migs.to_latest(conn)
-        .map_err(|e| AppError::Storage(format!("迁移失败: {e}")))
+///
+/// 使用 sqlx::migrate! 宏加载 migrations/ 目录下的 SQL 文件。
+/// SQLx 自动创建 _sqlx_migrations 表记录已执行的迁移。
+pub async fn run_migrations(pool: &SqlitePool) -> Result<(), StorageError> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .map_err(|e| StorageError::Migration(format!("迁移失败: {e}")))
 }
 
 /// 获取当前 schema 版本
-pub fn schema_version(conn: &Connection) -> Result<u32, AppError> {
-    let version: String = conn
-        .query_row(
-            "SELECT value FROM app_meta WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|e| AppError::Storage(format!("读取 schema 版本失败: {e}")))?;
+///
+/// 从 _sqlx_migrations 表读取最大版本号。
+pub async fn schema_version(pool: &SqlitePool) -> Result<u32, StorageError> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations"
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| StorageError::Query(format!("读取 schema 版本失败: {e}")))?;
 
-    version
-        .parse::<u32>()
-        .map_err(|e| AppError::Storage(format!("schema 版本格式错误: {e}")))
+    Ok(row.0 as u32)
 }
 ```
 
 ### crates/devforge-storage/src/status.rs
 
 ```rust
-use std::path::Path;
-use devforge_domain::app_info::DbStatus;
-use crate::pool::Database;
+use sqlx::SqlitePool;
+use async_trait::async_trait;
+use devforge_application::ports::DatabaseStatusProvider;
+use devforge_application::app_info::DbStatus;
 use crate::migrator;
 
-/// 检查数据库状态
-pub fn check_db_status(data_dir: &Path) -> DbStatus {
-    let db_path = data_dir.join("devforge.db");
+/// 基于 SQLx 的数据库状态提供者
+pub struct SqliteDatabaseStatus {
+    pool: Option<SqlitePool>,
+}
 
-    if !db_path.exists() {
-        return DbStatus::NotInitialized;
-    }
-
-    match Database::open(&db_path) {
-        Ok(db) => match migrator::schema_version(db.connection()) {
-            Ok(v) => DbStatus::Ready { migration_version: v },
-            Err(e) => DbStatus::Error { message: e.to_string() },
-        },
-        Err(e) => DbStatus::Error { message: e.to_string() },
+impl SqliteDatabaseStatus {
+    pub fn new(pool: Option<SqlitePool>) -> Self {
+        Self { pool }
     }
 }
+
+#[async_trait]
+impl DatabaseStatusProvider for SqliteDatabaseStatus {
+    async fn status(&self) -> DbStatus {
+        match &self.pool {
+            Some(pool) => match migrator::schema_version(pool).await {
+                Ok(v) => DbStatus::Ready { migration_version: v },
+                Err(e) => DbStatus::Error { message: e.to_string() },
+            },
+            None => DbStatus::NotInitialized,
+        }
+    }
+}
+```
+
+### crates/devforge-storage/Cargo.toml（更新依赖）
+
+```toml
+[dependencies]
+async-trait = { workspace = true }
+devforge-application = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
 ```
 
 ### 验证命令
@@ -854,17 +1182,27 @@ cargo clippy --workspace --all-targets -- -D warnings
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::TempDir;
 
-    #[test]
-    fn migration_runs_on_empty_db() {
+    #[tokio::test]
+    async fn migration_runs_on_empty_db() {
         let dir = TempDir::new().unwrap();
         let db_path = dir.path().join("test.db");
-        let db = Database::open(&db_path).unwrap();
-        migrator::run_migrations(db.connection()).unwrap();
-        let version = migrator::schema_version(db.connection()).unwrap();
+        let db = Database::open(&db_path).await.unwrap();
+        migrator::run_migrations(db.pool()).await.unwrap();
+        let version = migrator::schema_version(db.pool()).await.unwrap();
         assert_eq!(version, 1);
+    }
+
+    #[tokio::test]
+    async fn pool_is_cloneable() {
+        let dir = TempDir::new().unwrap();
+        let db_path = dir.path().join("test.db");
+        let db = Database::open(&db_path).await.unwrap();
+        let pool_clone = db.pool().clone();
+        // 克隆的池应能执行查询
+        let version = migrator::schema_version(&pool_clone).await.unwrap();
+        assert_eq!(version, 0); // 未运行迁移时版本为 0
     }
 }
 ```
@@ -874,12 +1212,13 @@ mod tests {
 ```toml
 [dev-dependencies]
 tempfile = "3"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 ```
 
 ### 提交信息
 
 ```
-feat(storage): SQLite bootstrap 和第一条 migration
+feat(storage): 使用 SQLx + SqlitePool 实现 SQLite bootstrap
 ```
 
 ---
@@ -890,60 +1229,111 @@ feat(storage): SQLite bootstrap 和第一条 migration
 
 **目标**：`get_app_info` 返回真实数据库状态。
 
+**架构决策**：
+- Tauri Command 仍通过 `GetAppInfo` Use Case 获取数据
+- `DatabaseStatusProvider` trait 改为异步，支持 SQLx 异步查询
+- Tauri State 持有 `GetAppInfo` 实例，不直接暴露 SqlitePool
+
+### 调用链
+
+```text
+Tauri get_app_info Command（async）
+        ↓
+GetAppInfo.execute().await
+        ↓
+PlatformInfoProvider + DatabaseStatusProvider（async）
+        ↓
+SqlitePool 查询 _sqlx_migrations
+```
+
 ### 精确文件修改
 
 | 文件 | 变更 |
 |------|------|
-| `apps/desktop/src-tauri/Cargo.toml` | 添加 devforge-storage 依赖 |
-| `apps/desktop/src-tauri/src/lib.rs` | 启动时初始化数据库 |
-| `apps/desktop/src-tauri/src/commands.rs` | 使用真实 DbStatus |
-| `apps/desktop/src-tauri/src/state.rs` | 管理 AppState |
+| `crates/devforge-application/src/ports.rs` | DatabaseStatusProvider 改为 async trait |
+| `crates/devforge-application/src/get_app_info.rs` | execute 改为 async |
+| `crates/devforge-storage/src/status.rs` | 实现 async DatabaseStatusProvider |
+| `apps/desktop/src-tauri/Cargo.toml` | 添加依赖 |
+| `apps/desktop/src-tauri/src/state.rs` | 使用 GetAppInfo + 真实 DbStatus |
+| `apps/desktop/src-tauri/src/commands.rs` | async command |
+| `apps/desktop/src-tauri/src/lib.rs` | async 初始化 |
 
-### apps/desktop/src-tauri/src/state.rs
+### crates/devforge-application/Cargo.toml（补充依赖）
+
+```toml
+[dependencies]
+async-trait = { workspace = true }
+```
+
+### crates/devforge-application/src/ports.rs（已在 Task 2 中定义）
+
+无需修改，Task 2 已定义 async trait。
+
+### crates/devforge-application/src/get_app_info.rs（已在 Task 2 中定义）
+
+无需修改，Task 2 已定义 async execute。
+
+### crates/devforge-storage/src/status.rs（已在 Task 6 中定义）
+
+无需修改，Task 6 已实现 `SqliteDatabaseStatus`。
+
+### apps/desktop/src-tauri/Cargo.toml（补充依赖）
+
+```toml
+[dependencies]
+devforge-application = { workspace = true }
+devforge-platform = { workspace = true }
+devforge-storage = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+```
+
+### apps/desktop/src-tauri/src/state.rs（更新）
 
 ```rust
 use std::path::PathBuf;
-use devforge_domain::app_info::DbStatus;
+use devforge_application::get_app_info::GetAppInfo;
+use devforge_platform::app_info::PlatformInfo;
 use devforge_storage::pool::Database;
+use devforge_storage::status::SqliteDatabaseStatus;
 
 /// 应用全局状态
+///
+/// 持有 Application Use Case，Tauri Command 通过此状态调用业务逻辑。
 pub struct AppState {
+    pub get_app_info: GetAppInfo<PlatformInfo, SqliteDatabaseStatus>,
     pub data_dir: PathBuf,
-    pub db: Option<Database>,
 }
 
 impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
+        let platform_info = PlatformInfo::new();
+        let db_status = SqliteDatabaseStatus::new(None);
         Self {
+            get_app_info: GetAppInfo::new(platform_info, db_status),
             data_dir,
-            db: None,
         }
     }
 
     /// 初始化数据库（运行迁移）
-    pub fn init_db(&mut self) -> Result<(), String> {
+    ///
+    /// 初始化完成后，替换 DatabaseStatusProvider 为持有真实 SqlitePool 的版本。
+    pub async fn init_db(&mut self) -> Result<(), String> {
         std::fs::create_dir_all(&self.data_dir)
             .map_err(|e| format!("创建数据目录失败: {e}"))?;
 
         let db_path = self.data_dir.join("devforge.db");
-        let db = Database::open(&db_path)
+        let db = Database::open(&db_path).await
             .map_err(|e| format!("打开数据库失败: {e}"))?;
 
-        devforge_storage::migrator::run_migrations(db.connection())
+        devforge_storage::migrator::run_migrations(db.pool()).await
             .map_err(|e| format!("运行迁移失败: {e}"))?;
 
-        self.db = Some(db);
-        Ok(())
-    }
+        // 用持有真实 Pool 的版本替换
+        let platform_info = PlatformInfo::new();
+        let db_status = SqliteDatabaseStatus::new(Some(db.pool().clone()));
+        self.get_app_info = GetAppInfo::new(platform_info, db_status);
 
-    pub fn db_status(&self) -> DbStatus {
-        match &self.db {
-            Some(db) => match devforge_storage::migrator::schema_version(db.connection()) {
-                Ok(v) => DbStatus::Ready { migration_version: v },
-                Err(e) => DbStatus::Error { message: e.to_string() },
-            },
-            None => DbStatus::NotInitialized,
-        }
+        Ok(())
     }
 }
 ```
@@ -952,16 +1342,15 @@ impl AppState {
 
 ```rust
 use tauri::State;
-use devforge_domain::app_info::AppInfo;
+use devforge_application::app_info::AppInfo;
 use crate::state::AppState;
 
+/// 获取应用信息
+///
+/// 通过 Application Use Case 获取，不在 Command 中构造业务逻辑。
 #[tauri::command]
-pub fn get_app_info(state: State<'_, AppState>) -> AppInfo {
-    AppInfo {
-        version: env!("CARGO_PKG_VERSION"),
-        data_dir: state.data_dir.to_string_lossy().to_string(),
-        db_status: state.db_status(),
-    }
+pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
+    state.get_app_info.execute().await
 }
 ```
 
@@ -973,18 +1362,19 @@ mod state;
 
 use state::AppState;
 
-pub fn run() {
+/// 运行 Tauri 应用
+#[tokio::main]
+pub async fn run() {
     let data_dir = dirs::data_dir()
         .expect("无法获取数据目录")
         .join("devforge");
 
     let mut app_state = AppState::new(data_dir);
-    if let Err(e) = app_state.init_db() {
+    if let Err(e) = app_state.init_db().await {
         eprintln!("数据库初始化失败: {e}");
     }
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
@@ -997,6 +1387,7 @@ pub fn run() {
 ### 验证命令
 
 ```powershell
+cargo test --workspace
 cd apps/desktop
 pnpm typecheck
 pnpm tauri dev
@@ -1268,7 +1659,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - name: 类型检查
+      # specta 生成的 bindings 已提交到 git，
+      # typecheck 验证前端与 Rust 类型一致。
+      # 如果 Rust 类型变了但 bindings 没更新，typecheck 会失败。
+      - name: 类型检查（含 specta 绑定验证）
         run: pnpm --filter @devforge/desktop typecheck
       - name: 测试
         run: pnpm --filter @devforge/desktop test
@@ -1305,7 +1699,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 Write-Host "`n=== Rust 测试 ===" -ForegroundColor Cyan
 cargo test --workspace
 
-Write-Host "`n=== 前端类型检查 ===" -ForegroundColor Cyan
+Write-Host "`n=== 前端类型检查（含 specta 绑定验证） ===" -ForegroundColor Cyan
 pnpm --filter @devforge/desktop typecheck
 
 Write-Host "`n=== 前端测试 ===" -ForegroundColor Cyan
@@ -1313,6 +1707,13 @@ pnpm --filter @devforge/desktop test
 
 Write-Host "`n=== 全部通过 ✓ ===" -ForegroundColor Green
 ```
+
+**类型同步验证原理**：
+- `src/bindings/index.ts` 由 specta 从 Rust 类型生成，提交到 git
+- 前端 `pnpm typecheck` 验证所有 import 与 bindings 一致
+- 如果 Rust AppInfo/DbStatus 字段变更但 bindings 未重新生成，typecheck 报错
+- 如果 specta 生成的 TS 接口与前端使用不一致，typecheck 报错
+- 这实现了"Rust 与 TypeScript 类型同步方案确定"的退出条件
 
 ### apps/desktop/vitest.config.ts
 
@@ -1337,13 +1738,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi } from "vitest";
 import App from "../App";
 
-// Mock IPC
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockResolvedValue({
-    version: "0.1.0",
-    data_dir: "/tmp/test",
-    db_status: { type: "NotInitialized" },
-  }),
+// Mock specta 生成的 bindings
+vi.mock("../bindings", () => ({
+  commands: {
+    getAppInfo: vi.fn().mockResolvedValue({
+      version: "0.1.0",
+      data_dir: "/tmp/test",
+      db_status: { type: "NotInitialized" },
+    }),
+  },
 }));
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -1455,6 +1858,6 @@ Task 5 (React 展示)    Task 6 (SQLite migration)
 - [ ] 应用展示版本号、数据目录、数据库状态
 - [ ] SQLite Migration 能在空数据库运行并返回正确版本
 - [ ] Rust Core 不直接依赖 React
-- [ ] Domain 层不依赖 Tauri
+- [ ] Application 层不依赖 Tauri（Phase 0 无 Domain 层）
 - [ ] CI 可以运行 Rust 测试、Clippy、fmt、前端类型检查和测试
 - [ ] Release 构建可以安装和启动
