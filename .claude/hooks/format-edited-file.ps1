@@ -18,6 +18,7 @@ try {
         $projectDir = (Get-Location).Path
     }
 
+    # 解析绝对路径
     if ([System.IO.Path]::IsPathRooted($filePath)) {
         $fullPath = $filePath
     }
@@ -25,38 +26,46 @@ try {
         $fullPath = Join-Path $projectDir $filePath
     }
 
-    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+    # 路径安全检查：规范化后必须仍在项目目录内
+    $normalizedPath = [System.IO.Path]::GetFullPath($fullPath)
+    $normalizedProject = [System.IO.Path]::GetFullPath($projectDir)
+    if (-not $normalizedPath.StartsWith($normalizedProject, [System.StringComparison]::OrdinalIgnoreCase)) {
+        [Console]::Error.WriteLine("格式化 Hook 跳过：路径超出项目目录")
         exit 0
     }
 
-    $extension = [System.IO.Path]::GetExtension($fullPath).ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $normalizedPath -PathType Leaf)) {
+        exit 0
+    }
+
+    $extension = [System.IO.Path]::GetExtension($normalizedPath).ToLowerInvariant()
+
+    # 前端文件使用 Prettier 单文件格式化
     $prettierExtensions = @(
         ".js", ".jsx", ".ts", ".tsx", ".vue",
         ".json", ".jsonc", ".css", ".scss", ".less",
         ".md", ".yaml", ".yml", ".html"
     )
 
-    Push-Location $projectDir
-
     if ($prettierExtensions -contains $extension) {
+        Push-Location $projectDir
+
         $prettierCmd = Join-Path $projectDir "node_modules/.bin/prettier.cmd"
         $prettierNoExt = Join-Path $projectDir "node_modules/.bin/prettier"
 
         if (Test-Path -LiteralPath $prettierCmd) {
-            & $prettierCmd --write -- $fullPath | Out-Null
+            & $prettierCmd --write -- $normalizedPath | Out-Null
         }
         elseif (Test-Path -LiteralPath $prettierNoExt) {
-            & $prettierNoExt --write -- $fullPath | Out-Null
+            & $prettierNoExt --write -- $normalizedPath | Out-Null
         }
-    }
-    elseif ($extension -eq ".rs") {
-        if ((Test-Path -LiteralPath (Join-Path $projectDir "Cargo.toml")) -and
-            (Get-Command cargo -ErrorAction SilentlyContinue)) {
-            & cargo fmt --all --quiet | Out-Null
-        }
+
+        Pop-Location
     }
 
-    Pop-Location
+    # Rust 文件不在编辑时自动格式化整个 Workspace。
+    # 格式化由 verify-task Skill 或手动 cargo fmt 负责。
+
     exit 0
 }
 catch {
