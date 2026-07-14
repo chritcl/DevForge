@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "检查当前任务是否真正完成。仅当需求已实现、相关验证已有实际结果、阻断级审查问题已处理、未验证项已明确披露时返回 {\"ok\": true}。否则返回 {\"ok\": false, \"reason\": \"具体还缺少什么\"}。"
+          }
+        ]
+      }
+    ]
+  }
+}
