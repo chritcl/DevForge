@@ -46,7 +46,8 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "dev:desktop": "pnpm --filter @devforge/desktop dev",
-    "build:desktop": "pnpm --filter @devforge/desktop build"
+    "build:desktop": "pnpm --filter @devforge/desktop build",
+    "bindings:generate": "cargo run -p devforge-desktop --bin export_bindings"
   },
   "engines": {
     "node": ">=22.0.0",
@@ -135,7 +136,9 @@ tracing = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 async-trait = "0.1"
-specta = { version = "2", features = ["serde"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 
 # 内部 crate
 devforge-application = { path = "crates/devforge-application" }
@@ -171,25 +174,29 @@ pub mod ports;
 ### devforge-application/src/app_info.rs
 
 ```rust
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 
 /// 应用基础信息（诊断 DTO）
 ///
 /// 用于向 UI 展示应用状态，不是领域实体。
 /// derive Type 用于 specta 自动生成 TypeScript 类型。
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+/// 仅派生 Serialize（IPC 输出），不派生 Deserialize。
+#[derive(Debug, Clone, Serialize, Type)]
 pub struct AppInfo {
-    pub version: &'static str,
+    pub version: String,
     pub data_dir: String,
     pub db_status: DbStatus,
 }
 
 /// 数据库状态
 ///
-/// specta 自动映射为 TypeScript tagged union：
-/// `{ type: "NotInitialized" } | { type: "Ready"; migration_version: number } | ...`
-#[derive(Debug, Clone, Serialize, Deserialize, Default, Type)]
+/// `#[serde(tag = "type")]` 使 serde 生成内部标签表示：
+/// `{ "type": "NotInitialized" } | { "type": "Ready", "migration_version": 1 } | ...`
+/// specta 尊重 serde 标签策略，生成对应的 TypeScript tagged union。
+/// 仅派生 Serialize（IPC 输出），不无意义地派生 Deserialize。
+#[derive(Debug, Clone, Serialize, Default, Type)]
+#[serde(tag = "type")]
 pub enum DbStatus {
     #[default]
     NotInitialized,
@@ -279,7 +286,7 @@ mod tests {
     impl AppInfoProvider for MockAppInfo {
         fn get_app_info(&self) -> AppInfo {
             AppInfo {
-                version: "0.1.0",
+                version: "0.1.0".into(),
                 data_dir: "/tmp/test".into(),
                 db_status: DbStatus::NotInitialized,
             }
@@ -600,7 +607,7 @@ apps/desktop/src-tauri/src/commands.rs
   #[specta::specta] on get_app_info
         ↓
 apps/desktop/src-tauri/src/lib.rs
-  tauri_specta::export_commands! → src/bindings/index.ts
+  Builder::new().commands(collect_commands![...]).export() → src/bindings.ts
         ↓
 前端直接 import { commands } from "./bindings"
   类型安全，无需手写 invokeCommand<T>()
@@ -615,7 +622,8 @@ apps/desktop/src-tauri/src/lib.rs
 | `apps/desktop/src-tauri/src/state.rs` | 管理 Application Service |
 | `apps/desktop/src-tauri/src/lib.rs` | 注册 command、state、specta 导出 |
 | `apps/desktop/src-tauri/Cargo.toml` | 添加 specta 依赖 |
-| `apps/desktop/src/bindings/index.ts` | specta 生成的类型和命令绑定（提交到 git） |
+| `apps/desktop/src/bindings.ts` | specta 生成的类型和命令绑定（提交到 git） |
+| `apps/desktop/src-tauri/src/bin/export_bindings.rs` | 独立绑定生成入口 |
 
 ### crates/devforge-platform/src/app_info.rs
 
@@ -625,22 +633,22 @@ use devforge_application::app_info::AppInfo;
 
 /// 平台信息提供者
 ///
-/// 从操作系统获取应用基础信息。
-pub struct PlatformInfo;
+/// data_dir 由调用方传入，确保与数据库初始化使用同一个路径。
+pub struct PlatformInfo {
+    data_dir: String,
+}
 
 impl PlatformInfo {
-    pub fn new() -> Self {
-        Self
+    pub fn new(data_dir: String) -> Self {
+        Self { data_dir }
     }
 }
 
 impl AppInfoProvider for PlatformInfo {
     fn get_app_info(&self) -> AppInfo {
         AppInfo {
-            version: env!("CARGO_PKG_VERSION"),
-            data_dir: dirs::data_dir()
-                .map(|p| p.join("devforge").to_string_lossy().to_string())
-                .unwrap_or_default(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            data_dir: self.data_dir.clone(),
             db_status: Default::default(), // 由 DatabaseStatusProvider 覆盖
         }
     }
@@ -652,7 +660,6 @@ impl AppInfoProvider for PlatformInfo {
 ```toml
 [dependencies]
 devforge-application = { workspace = true }
-dirs = "6"
 ```
 
 ### crates/devforge-platform/src/lib.rs（更新）
@@ -665,6 +672,7 @@ pub mod error;
 ### apps/desktop/src-tauri/src/state.rs
 
 ```rust
+use std::path::PathBuf;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformInfo;
 use devforge_application::ports::NotInitializedDbStatus;
@@ -674,14 +682,17 @@ use devforge_application::ports::NotInitializedDbStatus;
 /// 持有 Application Service，Tauri Command 通过此状态调用业务逻辑。
 pub struct AppState {
     pub get_app_info: GetAppInfo<PlatformInfo, NotInitializedDbStatus>,
+    pub data_dir: PathBuf,
 }
 
 impl AppState {
-    pub fn new() -> Self {
-        let platform_info = PlatformInfo::new();
+    pub fn new(data_dir: PathBuf) -> Self {
+        let data_dir_str = data_dir.to_string_lossy().to_string();
+        let platform_info = PlatformInfo::new(data_dir_str);
         let db_status = NotInitializedDbStatus;
         Self {
             get_app_info: GetAppInfo::new(platform_info, db_status),
+            data_dir,
         }
     }
 }
@@ -711,34 +722,42 @@ pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
 mod commands;
 mod state;
 
+use specta_typescript::Typescript;
+use tauri_specta::{collect_commands, Builder};
 use state::AppState;
+
+/// 创建 specta Builder（绑定生成和 run 共用同一个 Builder）
+fn create_builder() -> Builder<tauri::Wry> {
+    Builder::new()
+        .commands(collect_commands![commands::get_app_info,])
+}
 
 /// 导出 specta 生成的 TypeScript 绑定
 ///
-/// 运行时自动将 Rust 类型和命令签名写入 src/bindings/index.ts。
+/// 输出路径基于 CARGO_MANIFEST_DIR 构造，不依赖进程当前工作目录。
+/// 输出文件：apps/desktop/src/bindings.ts
 /// 该文件提交到 git，前端直接 import 使用。
-fn export_bindings() {
-    let result = tauri_specta::js::export_commands(
-        tauri::Builder::default()
-            .invoke_handler(tauri::generate_handler![
-                commands::get_app_info,
-            ]),
-        &["src", "bindings", "index.ts"],
-    );
-    if let Err(e) = result {
-        eprintln!("导出 TypeScript 绑定失败: {e}");
-    }
+pub fn export_bindings() {
+    let builder = create_builder();
+    let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("src")
+        .join("bindings.ts");
+    builder
+        .export(Typescript::default(), &out_path)
+        .expect("导出 TypeScript 绑定失败");
 }
 
 pub fn run() {
-    let app_state = AppState::new();
+    let builder = create_builder();
+    let data_dir = dirs::data_local_dir()
+        .expect("无法获取数据目录")
+        .join("DevForge");
+    let app_state = AppState::new(data_dir);
 
     tauri::Builder::default()
-        .plugin(tauri_specta::init())
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![
-            commands::get_app_info,
-        ])
+        .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
 }
@@ -750,11 +769,22 @@ pub fn run() {
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    // 开发模式下导出 TypeScript 绑定
-    #[cfg(debug_assertions)]
-    devforge_desktop_lib::export_bindings();
-
     devforge_desktop_lib::run();
+}
+```
+
+### apps/desktop/src-tauri/src/bin/export_bindings.rs（新增）
+
+独立的绑定生成入口，供 CI 和本地开发使用。输出路径基于 `CARGO_MANIFEST_DIR`，不依赖 cwd。
+
+```rust
+/// 独立绑定生成入口
+///
+/// 运行方式：cargo run -p devforge-desktop --bin export_bindings
+/// 输出：apps/desktop/src/bindings.ts（基于 CARGO_MANIFEST_DIR 构造）
+fn main() {
+    devforge_desktop_lib::export_bindings();
+    println!("绑定已导出");
 }
 ```
 
@@ -766,10 +796,11 @@ dirs = "6"
 devforge-application = { workspace = true }
 devforge-platform = { workspace = true }
 specta = { workspace = true }
-tauri-specta-plugin = { version = "2", features = ["javascript"] }
+specta-typescript = { workspace = true }
+tauri-specta = { workspace = true }
 ```
 
-### apps/desktop/src/bindings/index.ts（specta 生成）
+### apps/desktop/src/bindings.ts（specta 生成）
 
 此文件由 specta 自动生成，提交到 git 作为类型契约。前端直接 import 使用。
 
@@ -797,7 +828,7 @@ export const commands = {
 };
 ```
 
-**重要**：以上内容仅为示意，实际文件由 specta 在 `cargo tauri dev` 时自动生成。如果生成结果与示意不同，以 specta 输出为准。
+**重要**：以上内容仅为示意，实际文件由 `pnpm bindings:generate`（即 `cargo run -p devforge-desktop --bin export_bindings`）显式生成。如果生成结果与示意不同，以 specta 输出为准。
 
 ### 验证命令
 
@@ -812,10 +843,10 @@ pnpm tauri dev
 ```
 
 **验证步骤**：
-1. `cargo tauri dev` 后检查 `src/bindings/index.ts` 是否生成
+1. `pnpm bindings:generate` 后检查 `apps/desktop/src/bindings.ts` 是否生成
 2. 前端 `pnpm typecheck` 通过
 3. `commands.getAppInfo()` 返回正确的 AppInfo
-4. 任意修改 Rust AppInfo 字段后，`pnpm typecheck` 应报错（类型一致性验证）
+4. 任意修改 Rust AppInfo 字段后重新生成绑定，`pnpm typecheck` 应报错（类型一致性验证）
 
 ### 提交信息
 
@@ -843,7 +874,7 @@ feat(ipc): 使用 specta 建立 Rust → TypeScript 类型生成管线
 
 ### 类型来源
 
-所有 TypeScript 类型从 `src/bindings/index.ts` 导入，由 specta 从 Rust 自动生成。
+所有 TypeScript 类型从 `src/bindings.ts` 导入，由 specta 从 Rust 自动生成。
 不使用手写 DTO，不使用 `invokeCommand<T>()` 类型断言。
 
 ### 依赖安装
@@ -1036,7 +1067,8 @@ CREATE TABLE IF NOT EXISTS workspace (
 
 ```rust
 use std::path::Path;
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use std::time::Duration;
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use crate::error::StorageError;
 
 /// SQLite 连接池管理
@@ -1050,34 +1082,24 @@ pub struct Database {
 impl Database {
     /// 打开数据库并配置 SQLite 参数
     ///
-    /// 配置项：
+    /// 通过 SqliteConnectOptions 配置，确保连接池中每个连接都使用一致的配置：
     /// - WAL 模式：提升并发读写性能
     /// - foreign_keys：启用外键约束
-    /// - busy_timeout：避免锁竞争时立即失败
+    /// - busy_timeout：避免锁竞争时立即失败（通过 C API 设置，非 PRAGMA）
+    /// - create_if_missing：数据库文件不存在时自动创建
     pub async fn open(db_path: &Path) -> Result<Self, StorageError> {
-        let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
+        let opts = SqliteConnectOptions::new()
+            .filename(db_path)
+            .journal_mode(SqliteJournalMode::Wal)
+            .busy_timeout(Duration::from_secs(5))
+            .foreign_keys(true)
+            .create_if_missing(true);
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&db_url)
+            .connect_with(opts)
             .await
             .map_err(|e| StorageError::Connection(format!("打开数据库失败: {e}")))?;
-
-        // 配置 SQLite 参数
-        sqlx::query("PRAGMA journal_mode=WAL")
-            .execute(&pool)
-            .await
-            .map_err(|e| StorageError::Config(format!("设置 WAL 失败: {e}")))?;
-
-        sqlx::query("PRAGMA foreign_keys=ON")
-            .execute(&pool)
-            .await
-            .map_err(|e| StorageError::Config(format!("设置 foreign_keys 失败: {e}")))?;
-
-        sqlx::query("PRAGMA busy_timeout=5000")
-            .execute(&pool)
-            .await
-            .map_err(|e| StorageError::Config(format!("设置 busy_timeout 失败: {e}")))?;
 
         Ok(Self { pool })
     }
@@ -1306,7 +1328,8 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(data_dir: PathBuf) -> Self {
-        let platform_info = PlatformInfo::new();
+        let data_dir_str = data_dir.to_string_lossy().to_string();
+        let platform_info = PlatformInfo::new(data_dir_str);
         let db_status = SqliteDatabaseStatus::new(None);
         Self {
             get_app_info: GetAppInfo::new(platform_info, db_status),
@@ -1329,7 +1352,8 @@ impl AppState {
             .map_err(|e| format!("运行迁移失败: {e}"))?;
 
         // 用持有真实 Pool 的版本替换
-        let platform_info = PlatformInfo::new();
+        let data_dir_str = self.data_dir.to_string_lossy().to_string();
+        let platform_info = PlatformInfo::new(data_dir_str);
         let db_status = SqliteDatabaseStatus::new(Some(db.pool().clone()));
         self.get_app_info = GetAppInfo::new(platform_info, db_status);
 
@@ -1348,6 +1372,7 @@ use crate::state::AppState;
 /// 获取应用信息
 ///
 /// 通过 Application Use Case 获取，不在 Command 中构造业务逻辑。
+#[specta::specta]
 #[tauri::command]
 pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
     state.get_app_info.execute().await
@@ -1360,27 +1385,63 @@ pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
 mod commands;
 mod state;
 
+use specta_typescript::Typescript;
+use tauri_specta::{collect_commands, Builder};
 use state::AppState;
 
-/// 运行 Tauri 应用
-#[tokio::main]
-pub async fn run() {
-    let data_dir = dirs::data_dir()
+/// 创建 specta Builder（绑定生成和 run 共用同一个 Builder）
+fn create_builder() -> Builder<tauri::Wry> {
+    Builder::new()
+        .commands(collect_commands![commands::get_app_info,])
+}
+
+/// 导出 specta 生成的 TypeScript 绑定
+pub fn export_bindings() {
+    let builder = create_builder();
+    builder
+        .export(Typescript::default(), "../src/bindings.ts")
+        .expect("导出 TypeScript 绑定失败");
+}
+
+/// 初始化应用状态（异步，需要 tokio runtime）
+///
+/// 使用 dirs::data_local_dir()（%LOCALAPPDATA%\DevForge）作为数据目录。
+pub async fn init() -> Result<AppState, String> {
+    let data_dir = dirs::data_local_dir()
         .expect("无法获取数据目录")
-        .join("devforge");
+        .join("DevForge");
 
     let mut app_state = AppState::new(data_dir);
-    if let Err(e) = app_state.init_db().await {
-        eprintln!("数据库初始化失败: {e}");
-    }
+    app_state.init_db().await?;
+    Ok(app_state)
+}
+
+/// 启动 Tauri 应用（同步，阻塞直到退出）
+pub fn run(app_state: AppState) {
+    let builder = create_builder();
 
     tauri::Builder::default()
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![
-            commands::get_app_info,
-        ])
+        .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
+}
+```
+
+### apps/desktop/src-tauri/src/main.rs（更新）
+
+```rust
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+#[tokio::main]
+async fn main() {
+    match devforge_desktop_lib::init().await {
+        Ok(app_state) => devforge_desktop_lib::run(app_state),
+        Err(e) => {
+            eprintln!("应用初始化失败: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 ```
 
@@ -1649,7 +1710,23 @@ jobs:
       - name: 测试
         run: cargo test --workspace
 
+  bindings:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: 重新生成 specta 绑定
+        run: cargo run -p devforge-desktop --bin export_bindings
+      - name: 检查绑定是否最新
+        run: |
+          git diff --exit-code -- apps/desktop/src/bindings.ts || (
+            echo "::error::apps/desktop/src/bindings.ts 与 Rust 类型不同步，请运行 pnpm bindings:generate 并提交更新"
+            exit 1
+          )
+
   frontend:
+    needs: [bindings]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -1659,10 +1736,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      # specta 生成的 bindings 已提交到 git，
-      # typecheck 验证前端与 Rust 类型一致。
-      # 如果 Rust 类型变了但 bindings 没更新，typecheck 会失败。
-      - name: 类型检查（含 specta 绑定验证）
+      - name: 类型检查
         run: pnpm --filter @devforge/desktop typecheck
       - name: 测试
         run: pnpm --filter @devforge/desktop test
@@ -1699,7 +1773,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 Write-Host "`n=== Rust 测试 ===" -ForegroundColor Cyan
 cargo test --workspace
 
-Write-Host "`n=== 前端类型检查（含 specta 绑定验证） ===" -ForegroundColor Cyan
+Write-Host "`n=== 重新生成 specta 绑定 ===" -ForegroundColor Cyan
+pnpm bindings:generate
+
+Write-Host "`n=== 检查绑定是否最新 ===" -ForegroundColor Cyan
+$diff = git diff --stat -- apps/desktop/src/bindings.ts
+if ($diff) {
+    Write-Host "apps/desktop/src/bindings.ts 与 Rust 类型不同步，请提交更新" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "`n=== 前端类型检查 ===" -ForegroundColor Cyan
 pnpm --filter @devforge/desktop typecheck
 
 Write-Host "`n=== 前端测试 ===" -ForegroundColor Cyan
@@ -1709,10 +1793,11 @@ Write-Host "`n=== 全部通过 ✓ ===" -ForegroundColor Green
 ```
 
 **类型同步验证原理**：
-- `src/bindings/index.ts` 由 specta 从 Rust 类型生成，提交到 git
+- `src/bindings.ts` 由 specta 从 Rust 类型生成，提交到 git
+- CI 重新生成绑定（`cargo run -p devforge-desktop --bin export_bindings`），再用 `git diff --exit-code -- apps/desktop/src/bindings.ts` 检查是否最新
+- 本地脚本通过 `pnpm bindings:generate` 重新生成
 - 前端 `pnpm typecheck` 验证所有 import 与 bindings 一致
-- 如果 Rust AppInfo/DbStatus 字段变更但 bindings 未重新生成，typecheck 报错
-- 如果 specta 生成的 TS 接口与前端使用不一致，typecheck 报错
+- 仅运行 typecheck 不能发现 bindings 过期，必须先重新生成再 diff
 - 这实现了"Rust 与 TypeScript 类型同步方案确定"的退出条件
 
 ### apps/desktop/vitest.config.ts
@@ -1814,8 +1899,8 @@ pnpm tauri build
 # - 显示数据库状态 "就绪 (migration v1)"
 # - 无 panic、无 crash
 
-# 5. 验证数据目录
-ls "$env:APPDATA\devforge"
+# 5. 验证数据目录（%LOCALAPPDATA%\DevForge，与 dirs::data_local_dir() 一致）
+ls "$env:LOCALAPPDATA\DevForge"
 # 应包含 devforge.db, devforge.db-wal, devforge.db-shm
 ```
 
