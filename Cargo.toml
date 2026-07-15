@@ -4,6 +4,7 @@ members = [
     "crates/devforge-application",
     "crates/devforge-storage",
     "crates/devforge-platform",
+    "apps/desktop/src-tauri",
 ]
 
 [workspace.package]

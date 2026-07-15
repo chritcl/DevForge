@@ -432,12 +432,12 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
@@ -448,9 +448,59 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
 ```
 
 **依赖说明**：
+- `@tauri-apps/api` 推迟到 Task 4（Specta 生成的绑定实际调用 `@tauri-apps/api/core`）
 - `react-router` 推迟到 Task 8（Router）
 - `vitest` 推迟到 Task 9（测试基础设施）
+- `@types/node` 提供 `process.env` 类型（`vite.config.ts` 使用）
 - Task 3 只包含实际使用的依赖
+
+### apps/desktop/tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+```
+
+### apps/desktop/tsconfig.node.json
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts"]
+}
+```
+
+**配置说明**：
+- `tsconfig.node.json` 专门用于 `vite.config.ts`
+- `"types": ["node"]` 确保 `process.env` 类型可用
+- `composite: true` 支持 TypeScript 项目引用
 
 ### apps/desktop/src-tauri/Cargo.toml
 
@@ -465,7 +515,7 @@ publish = false
 
 [lib]
 name = "devforge_desktop_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -479,6 +529,11 @@ tauri = { version = "2", features = [] }
 - `devforge-application`：Task 4（Application Use Case）
 - `devforge-platform`：Task 4（Platform Adapter）
 - Task 3 的 Tauri runtime 只需要 `tauri` 本身
+
+**crate-type 说明**：
+- `staticlib`：Windows 静态库（Tauri Windows 构建必需）
+- `cdylib`：动态库（Tauri 插件系统使用）
+- `rlib`：Rust 标准库（cargo test 使用）
 
 ### apps/desktop/src-tauri/capabilities/default.json
 
@@ -545,6 +600,7 @@ fn main() {
 ### apps/desktop/vite.config.ts
 
 ```typescript
+import process from "node:process";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -576,12 +632,13 @@ export default defineConfig({
 - `port: 1420` + `strictPort: true`：固定端口，与 `tauri.conf.json` 的 `devUrl` 一致
 - `watch.ignored: ["**/src-tauri/**"]`：避免 Rust 文件变更触发前端全量刷新
 - `TAURI_DEV_HOST`：支持 Tauri 远程开发模式
+- `import process from "node:process"`：显式导入，不依赖未声明的全局类型
 
 ### apps/desktop/src-tauri/tauri.conf.json
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "DevForge",
   "version": "0.1.0",
   "identifier": "com.devforge.app",
