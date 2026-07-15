@@ -7,14 +7,10 @@ export const commands = {
 	/**
 	 *  获取应用信息
 	 * 
-	 *  specta 从此函数签名自动推导 TypeScript 类型。
-	 *  State 参数由 Tauri 注入，specta 自动排除，不出现在 TS 签名中。
-	 *  通过窄接口调用，不直接访问 AppState 的内部字段。
-	 * 
-	 *  Tauri 要求包含引用参数的异步 Command 返回 Result，
-	 *  此处使用 Infallible 作为错误类型，运行时不会实际产生错误。
+	 *  AppHandle 由 Tauri 注入，不出现在生成的 TypeScript 参数中。
+	 *  AppState 已由 Composition Root 注册为 managed state。
 	 */
-	getAppInfo: () => typedError<AppInfo, string>(__TAURI_INVOKE("get_app_info")),
+	getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
 };
 
 /* Types */
@@ -40,14 +36,4 @@ export type AppInfo = {
  *  仅派生 Serialize（IPC 输出），不无意义地派生 Deserialize。
  */
 export type DbStatus = { type: "NotInitialized" } | { type: "Ready"; migration_version: number } | { type: "Error"; message: string };
-
-/* Tauri Specta runtime */
-async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
-    try {
-        return { status: "ok", data: await result };
-    } catch (e) {
-        if (e instanceof Error) throw e;
-        return { status: "error", error: e as any };
-    }
-}
 

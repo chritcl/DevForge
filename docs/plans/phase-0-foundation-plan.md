@@ -864,19 +864,23 @@ impl AppState {
 ### apps/desktop/src-tauri/src/commands.rs
 
 ```rust
-use tauri::State;
+use tauri::{AppHandle, Manager};
 use devforge_application::app_info::AppInfo;
 use crate::state::AppState;
 
 /// 获取应用信息
 ///
-/// specta 从此函数签名自动推导 TypeScript 类型。
-/// State 参数由 Tauri 注入，specta 自动排除，不出现在 TS 签名中。
-/// 通过窄接口调用，不直接访问 AppState 的内部字段。
+/// AppHandle 由 Tauri 注入，不出现在生成的 TypeScript 参数中。
+/// AppState 已由 Composition Root 注册为 managed state。
+///
+/// 使用 AppHandle 而非 State<'_, AppState>，是因为 Tauri 要求
+/// 包含带生命周期引用参数的异步 Command 必须返回 Result，
+/// 而此 Command 运行时不会失败，不应引入虚假错误类型。
+/// AppHandle 不带生命周期参数，可直接返回 AppInfo。
 #[tauri::command]
 #[specta::specta]
-pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
-    state.app_info().await
+pub async fn get_app_info(app: AppHandle) -> AppInfo {
+    app.state::<AppState>().app_info().await
 }
 ```
 
