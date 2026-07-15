@@ -19,6 +19,10 @@ specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 async-trait = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
+# Task 4 新增
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
+
 # 内部 crate
 devforge-application = { path = "crates/devforge-application" }
 devforge-storage = { path = "crates/devforge-storage" }
