@@ -717,12 +717,14 @@ GetAppInfo Application Use Case
         ↓
 AppMetadataProvider + DatabaseStatusProvider
         ↓
-PlatformMetadata    + Storage Adapter
+PlatformMetadata    + NotInitializedDbStatus
         ↓
 AppInfo（组合后的最终 DTO）
         ↓
 specta 自动生成 TypeScript 类型和命令绑定
 ```
+
+> **注意**：Task 4 使用 `NotInitializedDbStatus` 占位实现，真实的 Storage Adapter（`SqliteDatabaseStatus`）到 Task 7 才接入。
 
 不得让 Tauri Command、Platform Adapter 或 Storage Adapter 自行组合最终 `AppInfo`。
 
@@ -746,13 +748,18 @@ apps/desktop/src-tauri/src/lib.rs
 
 | 文件 | 职责 |
 |------|------|
+| `Cargo.toml` | 根 Cargo.toml，补充 workspace.dependencies |
+| `Cargo.lock` | cargo 更新 |
+| `crates/devforge-platform/Cargo.toml` | 添加 devforge-application 依赖 |
+| `crates/devforge-platform/src/lib.rs` | 添加安全属性、导出 app_info 模块 |
 | `crates/devforge-platform/src/app_info.rs` | PlatformMetadata 实现 AppMetadataProvider |
+| `apps/desktop/src-tauri/Cargo.toml` | 合并补充 specta、anyhow 等依赖 |
 | `apps/desktop/src-tauri/src/commands.rs` | Tauri Command 定义（带 specta 注解） |
 | `apps/desktop/src-tauri/src/state.rs` | 管理 Application Service |
 | `apps/desktop/src-tauri/src/lib.rs` | 注册 command、state、specta 导出 |
-| `apps/desktop/src-tauri/Cargo.toml` | 添加 specta、anyhow 依赖 |
-| `apps/desktop/src/bindings.ts` | specta 生成的类型和命令绑定（提交到 git） |
+| `apps/desktop/src-tauri/src/main.rs` | Tauri 入口，保留安全属性 |
 | `apps/desktop/src-tauri/src/bin/export_bindings.rs` | 独立绑定生成入口 |
+| `apps/desktop/src/bindings.ts` | specta 生成的类型和命令绑定（提交到 git） |
 | `apps/desktop/package.json` | 添加 `@tauri-apps/api` 依赖 |
 | `pnpm-lock.yaml` | pnpm install 更新 |
 
@@ -899,6 +906,10 @@ fn create_builder() -> Builder<tauri::Wry> {
 /// 输出路径基于 CARGO_MANIFEST_DIR 构造，不依赖进程当前工作目录。
 /// 输出文件：apps/desktop/src/bindings.ts
 /// 该文件提交到 git，前端直接 import 使用。
+///
+/// # Errors
+///
+/// 当无法导出 Specta TypeScript bindings 时返回错误。
 pub fn export_bindings() -> anyhow::Result<()> {
     let builder = create_builder();
     let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -914,6 +925,10 @@ pub fn export_bindings() -> anyhow::Result<()> {
 /// 启动 Tauri 应用
 ///
 /// Composition Root 统一解析 data_dir 和版本号，注入 PlatformMetadata。
+///
+/// # Errors
+///
+/// 当无法解析本地数据目录或无法启动 Tauri 应用时返回错误。
 pub fn run() -> anyhow::Result<()> {
     let builder = create_builder();
 
@@ -980,17 +995,20 @@ specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 ```
 
-### apps/desktop/src-tauri/Cargo.toml（补充依赖）
+### apps/desktop/src-tauri/Cargo.toml（合并更新）
+
+以下依赖合并到 Task 3 已有的 `[dependencies]` 表中，不得创建第二个重复的 `[dependencies]` 段：
 
 ```toml
 [dependencies]
+# Task 3 已有：tauri = { version = "2", features = [] }
+# Task 4 新增：
 anyhow = "1"
 dirs = "6"
 devforge-application = { workspace = true }
 devforge-platform = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }
-tauri = { version = "2", features = [] }
 tauri-specta = { workspace = true }
 ```
 
