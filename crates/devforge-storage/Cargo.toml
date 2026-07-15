@@ -2,6 +2,9 @@
 name = "devforge-storage"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
 
 [dependencies]
 # Task 6 补充：sqlx, tokio, tracing, thiserror, async-trait, devforge-application

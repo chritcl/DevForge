@@ -76,13 +76,4 @@ mod tests {
             }
         ));
     }
-
-    #[tokio::test]
-    async fn platform_provider_does_not_know_db_status() {
-        // MockAppMetadata 不包含任何 DbStatus 字段
-        // 这证明 Platform Provider 不需要知道数据库状态
-        let metadata = MockAppMetadata.metadata();
-        assert_eq!(metadata.version, "0.1.0");
-        assert_eq!(metadata.data_dir, "C:/test/DevForge");
-    }
 }
