@@ -1,0 +1,7 @@
+[package]
+name = "devforge-storage"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Task 6 补充：sqlx, tokio, tracing, thiserror, async-trait, devforge-application

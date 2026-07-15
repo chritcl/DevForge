@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/devforge-application",
+    "crates/devforge-storage",
+    "crates/devforge-platform",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+# 内部 crate
+devforge-application = { path = "crates/devforge-application" }
+devforge-storage = { path = "crates/devforge-storage" }
+devforge-platform = { path = "crates/devforge-platform" }

@@ -1,0 +1,12 @@
+[package]
+name = "devforge-application"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+serde = { workspace = true }
+specta = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

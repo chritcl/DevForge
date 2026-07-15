@@ -1,0 +1,7 @@
+[package]
+name = "devforge-platform"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Task 4 补充：devforge-application
