@@ -16,6 +16,8 @@ dist/
 
 # === Tauri ===
 # Tauri 构建产物在 src-tauri/target/ 下，已被 target/ 覆盖
+# Tauri 自动生成的 ACL/Capability Schema
+apps/desktop/src-tauri/gen/schemas/
 
 # === 环境与密钥 ===
 .env
