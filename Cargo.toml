@@ -23,6 +23,11 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 
+# Task 6 新增
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
+thiserror = "2"
+tempfile = "3"
+
 # 内部 crate
 devforge-application = { path = "crates/devforge-application" }
 devforge-storage = { path = "crates/devforge-storage" }
