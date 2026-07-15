@@ -697,12 +697,16 @@ feat(desktop): 创建最小 Tauri + React 应用
 
 **依赖**：Task 2, Task 3
 
-**目标**：React 能通过 Tauri Command 调用 Rust 并获取 AppInfo，TypeScript 类型由 specta 从 Rust 自动推导。
+**目标**：建立 `get_app_info` Tauri Command 和 Rust → TypeScript bindings 生成管线，证明生成的 `commands.getAppInfo()` 可以调用后端并返回 `AppInfo`。React 页面展示和字段消费留到 Task 5。
 
 **架构决策**：
 - Tauri Command 只调用 Application Use Case，不自行构造业务逻辑
 - TypeScript 类型由 specta 从 Rust `#[derive(Type)]` 自动生成，不是手写 DTO
+- `apps/desktop/src/bindings.ts` 必须完全由 Specta 生成，不得手写或修改
 - 前端通过 specta 生成的绑定调用命令，类型在编译期保证一致
+- `PlatformMetadata` 接受版本号和数据目录，版本号由 Composition Root 注入，不在 platform crate 中使用 `env!("CARGO_PKG_VERSION")`
+- `AppState` 只保存当前实际使用的 Application Use Case，不提前保存未来字段
+- 启动和诊断路径使用 `anyhow::Result` 和 `anyhow::Context`，不使用 `expect()`
 
 ### 调用链
 
@@ -746,9 +750,11 @@ apps/desktop/src-tauri/src/lib.rs
 | `apps/desktop/src-tauri/src/commands.rs` | Tauri Command 定义（带 specta 注解） |
 | `apps/desktop/src-tauri/src/state.rs` | 管理 Application Service |
 | `apps/desktop/src-tauri/src/lib.rs` | 注册 command、state、specta 导出 |
-| `apps/desktop/src-tauri/Cargo.toml` | 添加 specta 依赖 |
+| `apps/desktop/src-tauri/Cargo.toml` | 添加 specta、anyhow 依赖 |
 | `apps/desktop/src/bindings.ts` | specta 生成的类型和命令绑定（提交到 git） |
 | `apps/desktop/src-tauri/src/bin/export_bindings.rs` | 独立绑定生成入口 |
+| `apps/desktop/package.json` | 添加 `@tauri-apps/api` 依赖 |
+| `pnpm-lock.yaml` | pnpm install 更新 |
 
 ### crates/devforge-platform/src/app_info.rs
 
@@ -760,24 +766,41 @@ use devforge_application::app_info::AppMetadata;
 /// 平台元数据提供者
 ///
 /// 只提供版本和数据目录，不感知数据库状态。
-/// data_dir 由 Composition Root 统一解析后传入，
-/// 不在 Provider 内部重新调用 dirs::data_local_dir()。
+/// version 和 data_dir 均由 Composition Root 注入，
+/// 不在 Provider 内部自行决定版本号或重新调用 dirs::data_local_dir()。
 pub struct PlatformMetadata {
+    version: String,
     data_dir: PathBuf,
 }
 
 impl PlatformMetadata {
-    pub fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir }
+    pub fn new(version: String, data_dir: PathBuf) -> Self {
+        Self { version, data_dir }
     }
 }
 
 impl AppMetadataProvider for PlatformMetadata {
     fn metadata(&self) -> AppMetadata {
         AppMetadata {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
+            version: self.version.clone(),
             data_dir: self.data_dir.to_string_lossy().into_owned(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injected_version_and_data_dir_are_returned() {
+        let meta = PlatformMetadata::new(
+            "1.2.3".to_owned(),
+            PathBuf::from("C:/Users/test/AppData/Local/DevForge"),
+        );
+        let info = meta.metadata();
+        assert_eq!(info.version, "1.2.3");
+        assert_eq!(info.data_dir, "C:/Users/test/AppData/Local/DevForge");
     }
 }
 ```
@@ -792,6 +815,9 @@ devforge-application = { workspace = true }
 ### crates/devforge-platform/src/lib.rs（更新）
 
 ```rust
+#![deny(unsafe_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
+
 pub mod app_info;
 ```
 
@@ -799,26 +825,31 @@ pub mod app_info;
 
 ```rust
 use std::path::PathBuf;
+use devforge_application::app_info::AppInfo;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformMetadata;
 use devforge_application::ports::NotInitializedDbStatus;
 
 /// 应用全局状态
 ///
-/// 持有 Application Use Case，Tauri Command 通过此状态调用业务逻辑。
+/// 持有 Application Use Case，Tauri Command 通过窄接口调用业务逻辑。
+/// 不暴露公开字段，Command 不直接访问内部结构。
 pub struct AppState {
-    pub get_app_info: GetAppInfo<PlatformMetadata, NotInitializedDbStatus>,
-    pub data_dir: PathBuf,
+    get_app_info: GetAppInfo<PlatformMetadata, NotInitializedDbStatus>,
 }
 
 impl AppState {
-    pub fn new(data_dir: PathBuf) -> Self {
-        let platform_metadata = PlatformMetadata::new(data_dir.clone());
+    pub fn new(version: String, data_dir: PathBuf) -> Self {
+        let platform_metadata = PlatformMetadata::new(version, data_dir);
         let db_status = NotInitializedDbStatus;
+
         Self {
             get_app_info: GetAppInfo::new(platform_metadata, db_status),
-            data_dir,
         }
+    }
+
+    pub async fn app_info(&self) -> AppInfo {
+        self.get_app_info.execute().await
     }
 }
 ```
@@ -834,27 +865,33 @@ use crate::state::AppState;
 ///
 /// specta 从此函数签名自动推导 TypeScript 类型。
 /// State 参数由 Tauri 注入，specta 自动排除，不出现在 TS 签名中。
-#[specta::specta]
+/// 通过窄接口调用，不直接访问 AppState 的内部字段。
 #[tauri::command]
+#[specta::specta]
 pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
-    state.get_app_info.execute().await
+    state.app_info().await
 }
 ```
 
 ### apps/desktop/src-tauri/src/lib.rs（更新）
 
 ```rust
+#![forbid(unsafe_code)]
+
 mod commands;
 mod state;
 
+use anyhow::Context;
 use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, Builder};
 use state::AppState;
 
 /// 创建 specta Builder（绑定生成和 run 共用同一个 Builder）
 fn create_builder() -> Builder<tauri::Wry> {
-    Builder::new()
-        .commands(collect_commands![commands::get_app_info,])
+    Builder::<tauri::Wry>::new()
+        .commands(collect_commands![
+            commands::get_app_info,
+        ])
 }
 
 /// 导出 specta 生成的 TypeScript 绑定
@@ -862,7 +899,7 @@ fn create_builder() -> Builder<tauri::Wry> {
 /// 输出路径基于 CARGO_MANIFEST_DIR 构造，不依赖进程当前工作目录。
 /// 输出文件：apps/desktop/src/bindings.ts
 /// 该文件提交到 git，前端直接 import 使用。
-pub fn export_bindings() {
+pub fn export_bindings() -> anyhow::Result<()> {
     let builder = create_builder();
     let out_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -870,32 +907,40 @@ pub fn export_bindings() {
         .join("bindings.ts");
     builder
         .export(Typescript::default(), &out_path)
-        .expect("导出 TypeScript 绑定失败");
+        .context("无法导出 TypeScript bindings")?;
+    Ok(())
 }
 
-pub fn run() {
+/// 启动 Tauri 应用
+///
+/// Composition Root 统一解析 data_dir 和版本号，注入 PlatformMetadata。
+pub fn run() -> anyhow::Result<()> {
     let builder = create_builder();
-    // Composition Root 统一解析 data_dir，传入 PlatformMetadata
+
     let data_dir = dirs::data_local_dir()
-        .expect("无法获取数据目录")
+        .context("无法解析本地数据目录")?
         .join("DevForge");
-    let app_state = AppState::new(data_dir);
+    let app_version = env!("CARGO_PKG_VERSION").to_owned();
+    let app_state = AppState::new(app_version, data_dir);
 
     tauri::Builder::default()
         .manage(app_state)
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
-        .expect("启动 Tauri 应用失败");
+        .context("无法启动 Tauri 应用")?;
+
+    Ok(())
 }
 ```
 
 ### apps/desktop/src-tauri/src/main.rs
 
 ```rust
+#![forbid(unsafe_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-fn main() {
-    devforge_desktop_lib::run();
+fn main() -> anyhow::Result<()> {
+    devforge_desktop_lib::run()
 }
 ```
 
@@ -908,11 +953,22 @@ fn main() {
 ///
 /// 运行方式：cargo run -p devforge-desktop --bin export_bindings
 /// 输出：apps/desktop/src/bindings.ts（基于 CARGO_MANIFEST_DIR 构造）
-fn main() {
-    devforge_desktop_lib::export_bindings();
+fn main() -> anyhow::Result<()> {
+    devforge_desktop_lib::export_bindings()?;
     println!("绑定已导出");
+    Ok(())
 }
 ```
+
+### apps/desktop/package.json（补充依赖）
+
+在 Task 3 基础上，`dependencies` 中增加：
+
+```json
+"@tauri-apps/api": "^2"
+```
+
+原因：Specta 生成的绑定会 `import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core"`，必须声明为直接依赖。
 
 ### 根 Cargo.toml（补充 workspace.dependencies）
 
@@ -928,61 +984,60 @@ tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
 
 ```toml
 [dependencies]
+anyhow = "1"
 dirs = "6"
 devforge-application = { workspace = true }
 devforge-platform = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }
+tauri = { version = "2", features = [] }
 tauri-specta = { workspace = true }
 ```
 
 ### apps/desktop/src/bindings.ts（specta 生成）
 
-此文件由 specta 自动生成，提交到 git 作为类型契约。前端直接 import 使用。
+此文件完全由 specta 自动生成，提交到 git 作为类型契约。前端直接 import 使用。**不得手写或修改此文件。**
+
+实际文件由 `pnpm bindings:generate`（即 `cargo run -p devforge-desktop --bin export_bindings`）显式生成。生成的绑定会导入：
 
 ```typescript
-/** specta 自动生成，请勿手动编辑 */
-
-/** 数据库状态 */
-export type DbStatus =
-  | { type: "NotInitialized" }
-  | { type: "Ready"; migration_version: number }
-  | { type: "Error"; message: string };
-
-/** 应用基础信息 */
-export interface AppInfo {
-  version: string;
-  data_dir: string;
-  db_status: DbStatus;
-}
-
-/** 获取应用信息 */
-export const commands = {
-  async getAppInfo(): Promise<AppInfo> {
-    return await window.__TAURI__.core.invoke("get_app_info");
-  },
-};
+import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 ```
 
-**重要**：以上内容仅为示意，实际文件由 `pnpm bindings:generate`（即 `cargo run -p devforge-desktop --bin export_bindings`）显式生成。如果生成结果与示意不同，以 specta 输出为准。
+因此 `apps/desktop/package.json` 的 `dependencies` 中必须包含 `@tauri-apps/api`。如果生成结果与本文档示意不同，以 specta 输出为准。
 
 ### 验证命令
 
+从仓库根目录依次运行：
+
 ```powershell
+pnpm install
 cargo test -p devforge-application
 cargo test -p devforge-platform
+cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
-cd apps/desktop
-pnpm install
-pnpm typecheck
-pnpm tauri dev
+cargo check -p devforge-desktop
+pnpm bindings:generate
+pnpm --filter @devforge/desktop typecheck
+pnpm --filter @devforge/desktop build
+pnpm dev:desktop
 ```
 
-**验证步骤**：
-1. `pnpm bindings:generate` 后检查 `apps/desktop/src/bindings.ts` 是否生成
-2. 前端 `pnpm typecheck` 通过
-3. `commands.getAppInfo()` 返回正确的 AppInfo
-4. 任意修改 Rust AppInfo 字段后重新生成绑定，`pnpm typecheck` 应报错（类型一致性验证）
+### 人工验证
+
+1. `apps/desktop/src/bindings.ts` 由 Specta 生成
+2. bindings 导入 `@tauri-apps/api/core`
+3. 没有 `window.__TAURI__`
+4. 在 Tauri 开发者工具中执行：
+   ```javascript
+   const { commands } = await import("/src/bindings.ts");
+   await commands.getAppInfo();
+   ```
+5. 返回值包含：
+   - `version = 0.1.0`
+   - `data_dir` 以 `DevForge` 结尾
+   - `db_status.type = NotInitialized`
+6. Ctrl+C 后相关进程正常退出
 
 ### 提交信息
 
