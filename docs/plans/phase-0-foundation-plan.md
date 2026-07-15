@@ -400,15 +400,17 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
 
 | 文件 | 职责 |
 |------|------|
+| `Cargo.toml` | 根 Cargo.toml，members 增加 `apps/desktop/src-tauri` |
 | `apps/desktop/package.json` | 前端包定义，name: @devforge/desktop |
 | `apps/desktop/tsconfig.json` | TypeScript 配置 |
 | `apps/desktop/tsconfig.node.json` | Node 侧 TS 配置 |
-| `apps/desktop/vite.config.ts` | Vite 配置 |
+| `apps/desktop/vite.config.ts` | Vite 配置（固定端口 1420） |
 | `apps/desktop/index.html` | HTML 入口 |
 | `apps/desktop/src/main.tsx` | React 入口 |
 | `apps/desktop/src/App.tsx` | 根组件（占位） |
 | `apps/desktop/src/vite-env.d.ts` | Vite 类型声明 |
 | `apps/desktop/src-tauri/Cargo.toml` | Tauri 宿主 crate |
+| `apps/desktop/src-tauri/build.rs` | Tauri 构建脚本 |
 | `apps/desktop/src-tauri/tauri.conf.json` | Tauri 配置 |
 | `apps/desktop/src-tauri/src/main.rs` | Tauri 入口 |
 | `apps/desktop/src-tauri/src/lib.rs` | Tauri lib 入口 |
@@ -427,14 +429,12 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
     "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "react-router": "^7"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -442,11 +442,15 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
     "typescript": "~5.8",
-    "vite": "^7",
-    "vitest": "^3"
+    "vite": "^7"
   }
 }
 ```
+
+**依赖说明**：
+- `react-router` 推迟到 Task 8（Router）
+- `vitest` 推迟到 Task 9（测试基础设施）
+- Task 3 只包含实际使用的依赖
 
 ### apps/desktop/src-tauri/Cargo.toml
 
@@ -455,6 +459,9 @@ feat(rust): 创建 Rust workspace 和最小 crate 骨架（无 domain 层）
 name = "devforge-desktop"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
 
 [lib]
 name = "devforge_desktop_lib"
@@ -465,10 +472,110 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-serde = { workspace = true }
-devforge-application = { workspace = true }
-devforge-platform = { workspace = true }
 ```
+
+**依赖延迟策略**：
+- `serde`：Task 4（IPC 序列化）
+- `devforge-application`：Task 4（Application Use Case）
+- `devforge-platform`：Task 4（Platform Adapter）
+- Task 3 的 Tauri runtime 只需要 `tauri` 本身
+
+### apps/desktop/src-tauri/capabilities/default.json
+
+```json
+{
+  "identifier": "default",
+  "description": "默认窗口能力",
+  "windows": ["main"],
+  "permissions": [
+    "core:default"
+  ]
+}
+```
+
+### apps/desktop/src-tauri/src/lib.rs
+
+```rust
+#![forbid(unsafe_code)]
+
+/// Tauri 应用入口（Phase 0 最小版本）
+///
+/// Task 4 会添加 commands 和 state。
+pub fn run() {
+    tauri::Builder::default()
+        .run(tauri::generate_context!())
+        .expect("启动 Tauri 应用失败");
+}
+```
+
+### apps/desktop/src-tauri/src/main.rs
+
+```rust
+#![forbid(unsafe_code)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+fn main() {
+    devforge_desktop_lib::run();
+}
+```
+
+### 根 Cargo.toml 修改
+
+在 Task 2 基础上，将 `apps/desktop/src-tauri` 加入 Cargo Workspace members：
+
+```toml
+[workspace]
+resolver = "2"
+members = [
+    "crates/devforge-application",
+    "crates/devforge-storage",
+    "crates/devforge-platform",
+    "apps/desktop/src-tauri",
+]
+```
+
+### apps/desktop/src-tauri/build.rs
+
+```rust
+fn main() {
+    tauri_build::build()
+}
+```
+
+### apps/desktop/vite.config.ts
+
+```typescript
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const host = process.env.TAURI_DEV_HOST;
+
+export default defineConfig({
+  plugins: [react()],
+  clearScreen: false,
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: host || false,
+    hmr: host
+      ? {
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
+      : undefined,
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
+  },
+  envPrefix: ["VITE_", "TAURI_ENV_*"],
+});
+```
+
+**关键配置**：
+- `port: 1420` + `strictPort: true`：固定端口，与 `tauri.conf.json` 的 `devUrl` 一致
+- `watch.ignored: ["**/src-tauri/**"]`：避免 Rust 文件变更触发前端全量刷新
+- `TAURI_DEV_HOST`：支持 Tauri 远程开发模式
 
 ### apps/desktop/src-tauri/tauri.conf.json
 
@@ -499,51 +606,27 @@ devforge-platform = { workspace = true }
 }
 ```
 
-### apps/desktop/src-tauri/capabilities/default.json
-
-```json
-{
-  "identifier": "default",
-  "description": "默认窗口能力",
-  "windows": ["main"],
-  "permissions": [
-    "core:default"
-  ]
-}
-```
-
-### apps/desktop/src-tauri/src/lib.rs
-
-```rust
-/// Tauri 应用入口（Phase 0 最小版本）
-///
-/// Task 4 会添加 commands 和 state。
-pub fn run() {
-    tauri::Builder::default()
-        .run(tauri::generate_context!())
-        .expect("启动 Tauri 应用失败");
-}
-```
-
-### apps/desktop/src-tauri/src/main.rs
-
-```rust
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-fn main() {
-    devforge_desktop_lib::run();
-}
-```
-
 ### 验证命令
 
 ```powershell
-cd apps/desktop
 pnpm install
-pnpm tauri dev
+pnpm --filter @devforge/desktop typecheck
+pnpm --filter @devforge/desktop build
+cargo check -p devforge-desktop
+pnpm --filter @devforge/desktop tauri dev
 ```
 
-**预期结果**：窗口弹出，显示 React 占位内容。Ctrl+C 退出无 panic。
+### 验证要求
+
+- [ ] TypeScript 类型检查通过（`pnpm typecheck`）
+- [ ] Vite 生产构建通过（`pnpm build`）
+- [ ] Tauri Rust crate 编译通过（`cargo check -p devforge-desktop`）
+- [ ] 窗口成功启动并显示 React 占位页
+- [ ] Vite 运行在固定端口 1420
+- [ ] Ctrl+C 后前端开发服务器和 Tauri 进程都正常退出
+- [ ] 不创建 Command、State、IPC bindings、SQLite 或 Router
+- [ ] 不提前执行 Task 4
+- [ ] 所有新增依赖均有实际使用者，无未来任务的提前依赖
 
 ### 提交信息
 
