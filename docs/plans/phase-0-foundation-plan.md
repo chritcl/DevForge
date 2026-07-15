@@ -1207,7 +1207,7 @@ function getErrorMessage(error: unknown): string {
   }
 
   try {
-    return JSON.stringify(error);
+    return JSON.stringify(error) ?? "未知错误";
   } catch {
     return "未知错误";
   }
