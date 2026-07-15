@@ -1084,6 +1084,8 @@ feat(ipc): 使用 specta 建立 Rust → TypeScript 类型生成管线
 | `apps/desktop/src/hooks/useAppInfo.ts` | AppInfo 查询 hook |
 | `apps/desktop/src/queryKeys.ts` | 集中式类型化 Query Key 工厂 |
 | `apps/desktop/src/main.tsx` | 更新：挂载 QueryClientProvider |
+| `apps/desktop/package.json` | 添加 @tanstack/react-query 依赖 |
+| `pnpm-lock.yaml` | pnpm install 更新 |
 
 ### 类型来源
 
@@ -1092,10 +1094,14 @@ feat(ipc): 使用 specta 建立 Rust → TypeScript 类型生成管线
 
 ### 依赖安装
 
+从仓库根目录执行，固定主版本号：
+
 ```powershell
-cd apps/desktop
-pnpm add @tanstack/react-query
+pnpm --filter @devforge/desktop add @tanstack/react-query@^5
 ```
+
+不得提前添加 TanStack Query Devtools、Vitest、Testing Library、Router、Zustand 或 CSS 框架。
+测试基础设施由 Task 9 建立。
 
 ### apps/desktop/src/queryKeys.ts
 
@@ -1114,23 +1120,35 @@ export const appKeys = {
 };
 ```
 
+Task 5 所有 AppInfo 查询必须使用 `appKeys.info()`，不得散落手写字符串数组。
+
 ### apps/desktop/src/hooks/useAppInfo.ts
 
 ```typescript
 import { useQuery } from "@tanstack/react-query";
-import { commands, type AppInfo } from "../bindings";
+
+import { commands } from "../bindings";
 import { appKeys } from "../queryKeys";
 
 export function useAppInfo() {
-  return useQuery<AppInfo>({
+  return useQuery({
     queryKey: appKeys.info(),
-    queryFn: () => commands.getAppInfo(),
-    // 本地 IPC 调用，非网络请求；配置错误不应盲目重试
+    queryFn: commands.getAppInfo,
+    // 本地 Tauri IPC，不依赖互联网
+    networkMode: "always",
+    // 配置或 IPC 错误不应盲目重试
     retry: false,
     staleTime: 30_000,
   });
 }
 ```
+
+要求：
+- 不显式写 `useQuery<AppInfo>`，类型完全从 Specta 生成的 Command 推导；
+- 不重复导入 `type AppInfo`；
+- 不使用类型断言；
+- 不包装成手写 Promise 类型；
+- 必须使用 `networkMode: "always"`，因为这是本地 Tauri IPC，不依赖互联网。
 
 ### apps/desktop/src/components/HealthStatus.tsx
 
@@ -1141,22 +1159,37 @@ interface HealthStatusProps {
   dbStatus: DbStatus;
 }
 
-export function HealthStatus({ dbStatus }: HealthStatusProps) {
-  const label =
-    dbStatus.type === "Ready"
-      ? `就绪 (migration v${dbStatus.migration_version})`
-      : dbStatus.type === "Error"
-        ? `错误: ${dbStatus.message}`
-        : "未初始化";
+function assertNever(value: never): never {
+  throw new Error(`未知数据库状态：${JSON.stringify(value)}`);
+}
 
+function getStatusLabel(dbStatus: DbStatus): string {
+  switch (dbStatus.type) {
+    case "NotInitialized":
+      return "未初始化";
+    case "Ready":
+      return `就绪（migration v${dbStatus.migration_version}）`;
+    case "Error":
+      return `错误：${dbStatus.message}`;
+    default:
+      return assertNever(dbStatus);
+  }
+}
+
+export function HealthStatus({ dbStatus }: HealthStatusProps) {
   return (
-    <div data-testid="health-status">
-      <strong>数据库：</strong>
-      {label}
-    </div>
+    <span role="status" data-status={dbStatus.type}>
+      {getStatusLabel(dbStatus)}
+    </span>
   );
 }
 ```
+
+要求：
+- 使用穷举 `switch` 处理 `DbStatus`，不使用连续三元表达式；
+- 新增 Rust 状态变体后必须触发 TypeScript 编译错误（通过 `assertNever`）；
+- 不添加 `data-testid`；
+- 使用语义化 `role="status"`。
 
 ### apps/desktop/src/App.tsx
 
@@ -1164,28 +1197,68 @@ export function HealthStatus({ dbStatus }: HealthStatusProps) {
 import { useAppInfo } from "./hooks/useAppInfo";
 import { HealthStatus } from "./components/HealthStatus";
 
-export default function App() {
-  const { data, isLoading, error } = useAppInfo();
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
 
-  if (isLoading) return <div>加载中...</div>;
-  if (error) return <div>加载失败: {String(error)}</div>;
-  if (!data) return null;
+  if (typeof error === "string") {
+    return error;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "未知错误";
+  }
+}
+
+export default function App() {
+  const appInfoQuery = useAppInfo();
+
+  if (appInfoQuery.isPending) {
+    return <div>加载中...</div>;
+  }
+
+  if (appInfoQuery.isError) {
+    return (
+      <div role="alert">
+        <p>加载应用信息失败：{getErrorMessage(appInfoQuery.error)}</p>
+        <button
+          type="button"
+          disabled={appInfoQuery.isFetching}
+          onClick={() => void appInfoQuery.refetch()}
+        >
+          {appInfoQuery.isFetching ? "正在重试..." : "重试"}
+        </button>
+      </div>
+    );
+  }
+
+  const data = appInfoQuery.data;
 
   return (
     <div style={{ padding: 24, fontFamily: "sans-serif" }}>
       <h1>DevForge</h1>
+      <p>开发者知识库与 AI 工作台</p>
       <dl>
         <dt>版本</dt>
         <dd>{data.version}</dd>
         <dt>数据目录</dt>
         <dd>{data.data_dir}</dd>
-        <dt>健康状态</dt>
+        <dt>数据库状态</dt>
         <dd><HealthStatus dbStatus={data.db_status} /></dd>
       </dl>
     </div>
   );
 }
 ```
+
+要求：
+- 查询状态必须显式处理：`isPending`、`isError`、成功；
+- 错误状态使用 `role="alert"` 和重试按钮；
+- 不得保留 `if (!data) return null`；
+- 不得产生无提示空白页面。
 
 ### apps/desktop/src/main.tsx（更新）
 
@@ -1206,17 +1279,36 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 ```
 
+要求：
+- 在模块级创建唯一 QueryClient，不得在 React 组件内部创建；
+- 保留 `React.StrictMode`。
+
 ### 验证命令
 
+从仓库根目录执行：
+
 ```powershell
-cd apps/desktop
-pnpm typecheck
-pnpm tauri dev
+pnpm install
+pnpm bindings:generate
+git diff --exit-code -- apps/desktop/src/bindings.ts
+pnpm --filter @devforge/desktop typecheck
+pnpm --filter @devforge/desktop build
+cargo check -p devforge-desktop
+pnpm dev:desktop
 ```
 
-**验证步骤**：
-1. 窗口显示 "DevForge"、版本号、数据目录、数据库状态（"未初始化"）
-2. 修改 Rust `AppInfo` 任意字段后重新 `cargo tauri dev`，前端 `pnpm typecheck` 应报错
+### 人工验证
+
+确认：
+1. 窗口显示 `DevForge`；
+2. 显示"开发者知识库与 AI 工作台"；
+3. 版本显示为 `0.1.0`；
+4. 数据目录以 `DevForge` 结尾；
+5. 数据库状态显示"未初始化"；
+6. 页面没有空白状态；
+7. 控制台没有 React、TanStack Query 或 IPC 异常；
+8. 不出现 `typedError` 包装；
+9. Ctrl+C 后 Tauri 和 Vite 进程正常退出。
 
 ### 提交信息
 
