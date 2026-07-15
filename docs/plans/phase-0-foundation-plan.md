@@ -1322,7 +1322,9 @@ feat(ui): React 使用 specta 生成的绑定展示 AppInfo
 
 **依赖**：Task 2
 
-**目标**：`devforge-storage` 能打开 SQLite 数据库、运行迁移、返回 DbStatus。
+**目标**：`devforge-storage` 能使用 SQLx 打开本地 SQLite 文件，以确定性配置创建连接池，执行嵌入式 Migration，并通过 `SqliteDatabaseStatus` 返回真实数据库健康状态。
+
+**范围约束**：Task 6 只负责 Storage crate 的独立能力。不得修改 Tauri AppState、Tauri Command、React，不得接入桌面应用启动流程，不得提前执行 Task 7，不得创建 Workspace 等 Phase 1 领域结构。
 
 **架构决策**：使用 SQLx + SqlitePool（符合架构文档规定），而非 rusqlite 单连接模型。SqlitePool 可克隆、支持异步、天然适合 Tauri State 持有。
 
@@ -1330,56 +1332,154 @@ feat(ui): React 使用 specta 生成的绑定展示 AppInfo
 
 | 文件 | 职责 |
 |------|------|
-| `crates/devforge-storage/Cargo.toml` | 更新依赖（sqlx, tokio, tracing, thiserror, async-trait） |
+| `Cargo.toml` | 根 Cargo.toml，补充 workspace.dependencies |
+| `Cargo.lock` | cargo 更新 |
+| `.gitattributes` | 强制 SQL 文件 LF 换行 |
+| `crates/devforge-storage/Cargo.toml` | 更新依赖 |
+| `crates/devforge-storage/build.rs` | Migration 构建跟踪 |
 | `crates/devforge-storage/src/lib.rs` | 导出模块 |
-| `crates/devforge-storage/src/error.rs` | StorageError（首次出现真实 SQLx 失败时创建） |
+| `crates/devforge-storage/src/error.rs` | StorageError（thiserror，保留原始错误链） |
 | `crates/devforge-storage/src/pool.rs` | SQLite 连接池管理 |
-| `crates/devforge-storage/src/migrator.rs` | Migration 运行器 |
-| `crates/devforge-storage/migrations/20240101000001_init.sql` | 第一条 migration |
-| `crates/devforge-storage/src/status.rs` | DbStatus 查询实现 |
+| `crates/devforge-storage/src/migrator.rs` | Migration 运行器（静态 Migrator） |
+| `crates/devforge-storage/src/status.rs` | SqliteDatabaseStatus 实现 |
+| `crates/devforge-storage/migrations/0001_create_app_meta.sql` | 第一条 migration |
+| `crates/devforge-storage/tests/sqlite_bootstrap.rs` | 集成测试 |
 
-### Cargo.toml 补充依赖
+### 根 Cargo.toml 补充 workspace.dependencies
+
+```toml
+sqlx = {
+    version = "=0.9.0",
+    default-features = false,
+    features = [
+        "runtime-tokio",
+        "sqlite-bundled",
+        "macros",
+        "migrate",
+    ],
+}
+thiserror = "2"
+tempfile = "3"
+```
+
+使用 SQLx `0.9.0`，因为项目 Rust `1.96` 满足 SQLx `0.9.0` 的 Rust `1.94` 最低要求。
+
+不得使用 `features = ["sqlite"]`，因为 SQLx 0.9 的 `sqlite` 总功能会启用当前不需要的扩展加载等能力。只启用最小的 `sqlite-bundled`。
+
+### crates/devforge-storage/Cargo.toml
 
 ```toml
 [dependencies]
 async-trait = { workspace = true }
 devforge-application = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
 ```
 
-同时将 `thiserror` 和 `tracing` 加回 workspace.dependencies。
+正常生产代码不直接使用 Tokio API，因此 `tokio` 仅作为测试依赖。不得添加未使用的 `tracing`。
 
-### migrations/20240101000001_init.sql
+### .gitattributes
+
+```gitattributes
+*.sql text eol=lf
+```
+
+防止 Windows CRLF 与 Linux LF 造成 SQLx migration 哈希不一致。
+
+### crates/devforge-storage/build.rs
+
+```rust
+#![forbid(unsafe_code)]
+
+fn main() {
+    println!("cargo:rerun-if-changed=migrations");
+}
+```
+
+确保仅新增或修改 migration 文件时，Cargo 也会重新编译嵌入式 migration。
+
+### migrations/0001_create_app_meta.sql
 
 ```sql
--- 应用元数据表
-CREATE TABLE IF NOT EXISTS app_meta (
+CREATE TABLE app_meta (
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- 插入 schema 版本
-INSERT OR IGNORE INTO app_meta (key, value) VALUES ('schema_version', '1');
-
--- 工作区表（预留，验证 migration 链）
-CREATE TABLE IF NOT EXISTS workspace (
-    id TEXT PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+要求：
+- 不创建 `workspace` 表，不创建任何 Phase 1 领域表；
+- 不插入 `schema_version`，schema version 由 `_sqlx_migrations` 管理；
+- 不使用 `CREATE TABLE IF NOT EXISTS`，不使用 `INSERT OR IGNORE`；
+- migration 冲突必须明确失败，不能被静默掩盖；
+- SQL 文件必须使用 LF 换行。
+
+### crates/devforge-storage/src/lib.rs
+
+```rust
+#![forbid(unsafe_code)]
+
+pub mod error;
+pub mod migrator;
+pub mod pool;
+pub mod status;
+```
+
+不得导出测试辅助代码。
+
+### crates/devforge-storage/src/error.rs
+
+```rust
+use std::path::PathBuf;
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("无法打开 SQLite 数据库：{path}")]
+    OpenDatabase {
+        path: PathBuf,
+        #[source]
+        source: sqlx::Error,
+    },
+
+    #[error("无法执行 SQLite migration")]
+    Migration {
+        #[source]
+        source: sqlx::migrate::MigrateError,
+    },
+
+    #[error("无法读取 SQLite schema 版本")]
+    SchemaVersion {
+        #[source]
+        source: sqlx::Error,
+    },
+
+    #[error("migration 版本超出应用支持范围：{version}")]
+    MigrationVersionOutOfRange {
+        version: i64,
+    },
+}
+```
+
+要求：
+- 不使用 `Connection(String)`、`Migration(String)`、`Query(String)`；
+- 不丢失 `sqlx::Error` 或 `MigrateError` 的 source；
+- 只有转换为最终用户诊断 DTO 时才允许调用 `to_string()`。
 
 ### crates/devforge-storage/src/pool.rs
 
 ```rust
 use std::path::Path;
 use std::time::Duration;
+
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
+
 use crate::error::StorageError;
 
 /// SQLite 连接池管理
@@ -1398,6 +1498,10 @@ impl Database {
     /// - foreign_keys：启用外键约束
     /// - busy_timeout：避免锁竞争时立即失败（通过 C API 设置，非 PRAGMA）
     /// - create_if_missing：数据库文件不存在时自动创建
+    ///
+    /// # Errors
+    ///
+    /// 当数据库文件无法打开、路径无效或连接池创建失败时返回错误。
     pub async fn open(db_path: &Path) -> Result<Self, StorageError> {
         let opts = SqliteConnectOptions::new()
             .filename(db_path)
@@ -1408,9 +1512,13 @@ impl Database {
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
+            .acquire_timeout(Duration::from_secs(5))
             .connect_with(opts)
             .await
-            .map_err(|e| StorageError::Connection(format!("打开数据库失败: {e}")))?;
+            .map_err(|source| StorageError::OpenDatabase {
+                path: db_path.to_path_buf(),
+                source,
+            })?;
 
         Ok(Self { pool })
     }
@@ -1422,54 +1530,91 @@ impl Database {
 }
 ```
 
+要求：
+- `busy_timeout` 处理 SQLite 文件锁等待；
+- `acquire_timeout` 处理连接池获取连接等待；
+- 不使用 `connect_lazy_with`，打开时必须至少建立一个真实连接；
+- `Database::open()` 不负责创建父目录，父目录由 Composition Root 在 Task 7 创建；
+- 错误中保存数据库路径和原始 `sqlx::Error`；
+- `Database::open()` Rustdoc 增加 `# Errors`；
+- 保留 `#![forbid(unsafe_code)]`。
+- 测试统一使用 `tempfile` 创建文件数据库，不得使用多连接的普通 `:memory:` 数据库。
+
 ### crates/devforge-storage/src/migrator.rs
 
 ```rust
+use sqlx::migrate::Migrator;
 use sqlx::SqlitePool;
+
 use crate::error::StorageError;
+
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 /// 运行所有待执行迁移
 ///
-/// 使用 sqlx::migrate! 宏加载 migrations/ 目录下的 SQL 文件。
-/// SQLx 自动创建 _sqlx_migrations 表记录已执行的迁移。
+/// 使用静态 Migrator 加载 migrations/ 目录下的 SQL 文件。
+/// SQLx 自动创建 `_sqlx_migrations` 表记录已执行的迁移。
+///
+/// # Errors
+///
+/// 当 migration 文件损坏、SQL 语法错误或数据库锁定时返回错误。
 pub async fn run_migrations(pool: &SqlitePool) -> Result<(), StorageError> {
-    sqlx::migrate!("./migrations")
+    MIGRATOR
         .run(pool)
         .await
-        .map_err(|e| StorageError::Migration(format!("迁移失败: {e}")))
+        .map_err(|source| StorageError::Migration { source })
 }
 
 /// 获取当前 schema 版本
 ///
-/// 从 _sqlx_migrations 表读取最大版本号。
+/// 从 `_sqlx_migrations` 表查询最后一个成功版本。
+/// 空结果按版本 0 处理。
+///
+/// # Errors
+///
+/// 当无法查询 `_sqlx_migrations` 表或版本号超出 `u32` 范围时返回错误。
 pub async fn schema_version(pool: &SqlitePool) -> Result<u32, StorageError> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COALESCE(MAX(version), 0) FROM _sqlx_migrations"
+    let row: (Option<i64>,) = sqlx::query_as(
+        "SELECT MAX(version) FROM _sqlx_migrations WHERE success = TRUE",
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| StorageError::Query(format!("读取 schema 版本失败: {e}")))?;
+    .map_err(|source| StorageError::SchemaVersion { source })?;
 
-    Ok(row.0 as u32)
+    let version = row.0.unwrap_or(0);
+
+    u32::try_from(version).map_err(|_| StorageError::MigrationVersionOutOfRange { version })
 }
 ```
+
+要求：
+- 定义单一静态 `Migrator`；
+- 为公共可失败函数增加 Rustdoc `# Errors`；
+- `schema_version()` 使用 `Option<i64>` 接收查询结果，空结果按 0 处理；
+- `i64` → `u32` 使用 `u32::try_from()`，失败时返回 `MigrationVersionOutOfRange`；
+- 禁止 `version as u32`。
 
 ### crates/devforge-storage/src/status.rs
 
 ```rust
-use sqlx::SqlitePool;
 use async_trait::async_trait;
-use devforge_application::ports::DatabaseStatusProvider;
 use devforge_application::app_info::DbStatus;
+use devforge_application::ports::DatabaseStatusProvider;
+use sqlx::SqlitePool;
+
 use crate::migrator;
 
 /// 基于 SQLx 的数据库状态提供者
+///
+/// 只表示已经成功建立的 SQLite 数据源。
+/// 不允许构造内部没有 Pool 的实例，
+/// 未初始化状态由 Application 层的 `NotInitializedDbStatus` 表示。
 pub struct SqliteDatabaseStatus {
-    pool: Option<SqlitePool>,
+    pool: SqlitePool,
 }
 
 impl SqliteDatabaseStatus {
-    pub fn new(pool: Option<SqlitePool>) -> Self {
+    pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
 }
@@ -1477,81 +1622,95 @@ impl SqliteDatabaseStatus {
 #[async_trait]
 impl DatabaseStatusProvider for SqliteDatabaseStatus {
     async fn status(&self) -> DbStatus {
-        match &self.pool {
-            Some(pool) => match migrator::schema_version(pool).await {
-                Ok(v) => DbStatus::Ready { migration_version: v },
-                Err(e) => DbStatus::Error { message: e.to_string() },
-            },
-            None => DbStatus::NotInitialized,
+        match migrator::schema_version(&self.pool).await {
+            Ok(version) => DbStatus::Ready { migration_version: version },
+            Err(e) => DbStatus::Error { message: e.to_string() },
         }
     }
 }
 ```
 
-### crates/devforge-storage/Cargo.toml（更新依赖）
+要求：
+- 不使用 `Option<SqlitePool>`，Storage Adapter 只表示已成功建立的数据源；
+- `schema_version()` 成功返回 `DbStatus::Ready`，失败在最终诊断边界转换为 `DbStatus::Error`；
+- 不记录并重复返回同一个错误；
+- 不 panic，不使用 `unwrap()` 或 `expect()`。
 
-```toml
-[dependencies]
-async-trait = { workspace = true }
-devforge-application = { workspace = true }
-sqlx = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-thiserror = { workspace = true }
-```
+### crates/devforge-storage/tests/sqlite_bootstrap.rs
+
+使用 `tempfile::TempDir` 和文件数据库。每个测试结束前执行 `pool.close().await` 确保 Windows 文件句柄释放。
+
+至少实现以下测试：
+
+#### 1. 数据库打开与连接配置
+
+验证数据库文件被创建，以及：
+- `PRAGMA journal_mode = wal`
+- `PRAGMA foreign_keys = 1`
+- `PRAGMA busy_timeout = 5000`
+
+不要通过检查 `-wal` 文件是否存在来判断 WAL，因为 WAL 文件可能在 checkpoint 或关闭后被删除。
+
+#### 2. Migration 在空数据库执行成功
+
+验证：
+- `run_migrations()` 成功
+- `app_meta` 表存在
+- `schema_version() = 1`
+
+#### 3. Migration 重复执行保持幂等
+
+对同一个数据库连续调用两次 `run_migrations()`，确认：
+- 没有错误
+- `schema_version()` 仍为 1
+- `app_meta` 表没有重复或损坏
+
+幂等性来自 SQLx migration 追踪，不通过 `IF NOT EXISTS` 掩盖错误。
+
+#### 4. 健康状态
+
+Migration 完成后构造 `SqliteDatabaseStatus::new(pool.clone())`，调用 `status()` 确认返回 `DbStatus::Ready { migration_version: 1 }`。
+
+#### 5. 未迁移数据库错误状态
+
+打开新的文件数据库但不运行 migration，构造 `SqliteDatabaseStatus` 后调用 `status()`，确认返回 `DbStatus::Error { .. }`，不得 panic。
+
+#### 测试约束
+
+- 不得写入用户真实数据目录；
+- 不得依赖系统已安装 SQLite；
+- 不得依赖网络；
+- 不得并行共享同一个数据库文件；
+- 不得使用 `unwrap()` 或 `expect()`，测试函数使用 `Result` 和 `?`。
 
 ### 验证命令
 
+从仓库根目录依次运行：
+
 ```powershell
 cargo test -p devforge-storage
+cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo check --workspace
+git diff --check
+git status --short
 ```
 
-**预期结果**：测试通过，migration 在临时数据库中执行成功。
-
-### 测试
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn migration_runs_on_empty_db() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let db = Database::open(&db_path).await.unwrap();
-        migrator::run_migrations(db.pool()).await.unwrap();
-        let version = migrator::schema_version(db.pool()).await.unwrap();
-        assert_eq!(version, 1);
-    }
-
-    #[tokio::test]
-    async fn pool_is_cloneable() {
-        let dir = TempDir::new().unwrap();
-        let db_path = dir.path().join("test.db");
-        let db = Database::open(&db_path).await.unwrap();
-        let pool_clone = db.pool().clone();
-        // 克隆的池应能执行查询
-        let version = migrator::schema_version(&pool_clone).await.unwrap();
-        assert_eq!(version, 0); // 未运行迁移时版本为 0
-    }
-}
-```
-
-**Cargo.toml 补充**：
-
-```toml
-[dev-dependencies]
-tempfile = "3"
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-```
+人工确认：
+1. `Cargo.lock` 中解析 SQLx `0.9.0`；
+2. SQLx 只启用了所需 SQLite、Tokio、macro 和 migration 能力；
+3. Migration 文件为 LF；
+4. 没有 `workspace` 领域表；
+5. 没有未经检查的 `as u32`；
+6. 没有把 SQLx source error 提前转换为 String；
+7. 没有未使用的 `tracing` 依赖；
+8. 没有修改 Tauri 或 React 文件。
 
 ### 提交信息
 
 ```
-feat(storage): 使用 SQLx + SqlitePool 实现 SQLite bootstrap
+feat(storage): 建立 SQLite 连接池和第一条 migration
 ```
 
 ---
