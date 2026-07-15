@@ -1,0 +1,17 @@
+{
+  "name": "devforge",
+  "private": true,
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "dev:desktop": "pnpm --filter @devforge/desktop dev",
+    "build:desktop": "pnpm --filter @devforge/desktop build",
+    "bindings:generate": "cargo run -p devforge-desktop --bin export_bindings"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.33.2"
+}
