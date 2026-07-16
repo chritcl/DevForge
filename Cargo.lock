@@ -673,12 +673,14 @@ dependencies = [
  "anyhow",
  "devforge-application",
  "devforge-platform",
+ "devforge-storage",
  "dirs",
  "specta",
  "specta-typescript",
  "tauri",
  "tauri-build",
  "tauri-specta",
+ "tempfile",
 ]
 
 [[package]]

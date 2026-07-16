@@ -35,21 +35,60 @@ pub fn export_bindings() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 启动 Tauri 应用
+/// 初始化应用状态
 ///
-/// Composition Root 统一解析 data_dir 和版本号，注入 PlatformMetadata。
+/// 打开 SQLite 数据库、执行 Migration，并构造完整的 AppState。
+/// Database 包装器在函数结束时释放，但 SqlitePool clone 由 SqliteDatabaseStatus 持有。
+async fn initialize_app_state(
+    version: String,
+    data_dir: std::path::PathBuf,
+) -> anyhow::Result<AppState> {
+    let db_path = data_dir.join("devforge.db");
+
+    let database = devforge_storage::pool::Database::open(&db_path)
+        .await
+        .with_context(|| format!("无法打开 SQLite 数据库：{}", db_path.display()))?;
+
+    devforge_storage::migrator::run_migrations(database.pool())
+        .await
+        .context("无法执行 SQLite migration")?;
+
+    let platform_metadata = devforge_platform::app_info::PlatformMetadata::new(version, data_dir);
+
+    let database_status =
+        devforge_storage::status::SqliteDatabaseStatus::new(database.pool().clone());
+
+    Ok(AppState::new(platform_metadata, database_status))
+}
+
+/// 启动 Tauri 应用。
+///
+/// Composition Root 负责解析数据目录、创建目录、初始化 SQLite、
+/// 执行 Migration，并构造完整的 AppState。
 ///
 /// # Errors
 ///
-/// 当无法解析本地数据目录或无法启动 Tauri 应用时返回错误。
+/// 以下情况返回错误：
+///
+/// - 无法解析本地数据目录；
+/// - 无法创建应用数据目录；
+/// - SQLite 数据库无法打开；
+/// - Migration 执行失败；
+/// - Tauri 应用无法启动。
 pub fn run() -> anyhow::Result<()> {
-    let builder = create_builder();
-
     let data_dir = dirs::data_local_dir()
         .context("无法解析本地数据目录")?
         .join("DevForge");
+
+    std::fs::create_dir_all(&data_dir)
+        .with_context(|| format!("无法创建本地数据目录：{}", data_dir.display()))?;
+
     let app_version = env!("CARGO_PKG_VERSION").to_owned();
-    let app_state = AppState::new(app_version, data_dir);
+
+    let app_state = tauri::async_runtime::block_on(initialize_app_state(app_version, data_dir))
+        .context("无法初始化桌面应用状态")?;
+
+    let builder = create_builder();
 
     tauri::Builder::default()
         .manage(app_state)

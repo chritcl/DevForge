@@ -26,3 +26,9 @@ devforge-platform = { workspace = true }
 specta = { workspace = true }
 specta-typescript = { workspace = true }
 tauri-specta = { workspace = true }
+
+# Task 7 新增
+devforge-storage = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
