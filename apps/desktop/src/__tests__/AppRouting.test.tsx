@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import {
   QueryClient,
   QueryClientProvider,
@@ -20,6 +20,22 @@ vi.mock("../bindings", () => ({
 import { commands } from "../bindings";
 import type { AppInfo } from "../bindings";
 
+const queryClients = new Set<QueryClient>();
+
+function createTestQueryClient(): QueryClient {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
+
+  queryClients.add(queryClient);
+  return queryClient;
+}
+
 const SUCCESS_DATA: AppInfo = {
   version: "0.1.0",
   data_dir: "C:\\Users\\test\\AppData\\Local\\DevForge",
@@ -30,14 +46,7 @@ const SUCCESS_DATA: AppInfo = {
 };
 
 function renderRoute(initialEntry: string) {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        gcTime: 0,
-      },
-    },
-  });
+  const queryClient = createTestQueryClient();
 
   const router = createMemoryRouter(
     [
@@ -79,6 +88,13 @@ function renderRoute(initialEntry: string) {
 }
 
 afterEach(() => {
+  cleanup();
+
+  for (const queryClient of queryClients) {
+    queryClient.clear();
+  }
+
+  queryClients.clear();
   vi.mocked(commands.getAppInfo).mockReset();
 });
 
@@ -116,14 +132,14 @@ describe("AppRouting", () => {
 
     renderRoute("/");
 
-    // 首页调用了 getAppInfo
-    expect(commands.getAppInfo).toHaveBeenCalled();
-
-    // 最终显示成功状态
+    // 等待成功状态出现
     expect(await screen.findByText("DevForge")).toBeInTheDocument();
     expect(screen.getByText("0.1.0")).toBeInTheDocument();
     expect(
       screen.getByText("就绪（migration v1）"),
     ).toBeInTheDocument();
+
+    // 首页精确调用 getAppInfo 一次
+    expect(commands.getAppInfo).toHaveBeenCalledTimes(1);
   });
 });

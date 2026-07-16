@@ -1,9 +1,20 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { describe, it, expect, vi } from "vitest";
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { commands } from "../bindings";
 import type { AppInfo } from "../bindings";
@@ -15,6 +26,22 @@ vi.mock("../bindings", () => ({
   },
 }));
 
+const queryClients = new Set<QueryClient>();
+
+function createTestQueryClient(): QueryClient {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: 0,
+      },
+    },
+  });
+
+  queryClients.add(queryClient);
+  return queryClient;
+}
+
 const SUCCESS_DATA: AppInfo = {
   version: "0.1.0",
   data_dir: "C:\\Users\\test\\AppData\\Local\\DevForge",
@@ -25,14 +52,7 @@ const SUCCESS_DATA: AppInfo = {
 };
 
 function renderHomePage() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-        gcTime: 0,
-      },
-    },
-  });
+  const queryClient = createTestQueryClient();
 
   const result = render(
     <QueryClientProvider client={queryClient}>
@@ -47,6 +67,17 @@ function renderHomePage() {
 }
 
 describe("HomePage", () => {
+  afterEach(() => {
+    cleanup();
+
+    for (const queryClient of queryClients) {
+      queryClient.clear();
+    }
+
+    queryClients.clear();
+    vi.mocked(commands.getAppInfo).mockReset();
+  });
+
   it("加载并显示真实状态", async () => {
     let resolvePromise!: (value: AppInfo) => void;
     const pendingPromise = new Promise<AppInfo>((resolve) => {

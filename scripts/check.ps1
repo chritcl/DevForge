@@ -34,6 +34,51 @@ try {
         }
     }
 
+    # Windows MSVC 工具链预检
+    function Assert-WindowsRustHost {
+        if (-not $IsWindows) {
+            return
+        }
+
+        Write-Host "`n=== Windows Rust 工具链检查 ===" -ForegroundColor Cyan
+
+        $rustVersionOutput = & rustc --version --verbose
+        $exitCode = $LASTEXITCODE
+
+        if ($exitCode -ne 0) {
+            throw "无法读取 Rust 工具链信息（退出码：$exitCode）"
+        }
+
+        $hostLine = $rustVersionOutput |
+            Where-Object { $_ -match "^host:\s+(.+)$" } |
+            Select-Object -First 1
+
+        if (-not $hostLine) {
+            throw "无法从 rustc --version --verbose 中识别 Rust host"
+        }
+
+        $rustHost = ($hostLine -replace "^host:\s+", "").Trim()
+
+        if (-not $rustHost.EndsWith("-pc-windows-msvc")) {
+            throw @"
+当前 Windows Rust host 为：$rustHost
+
+DevForge Windows 构建需要 MSVC Rust 工具链。
+请执行：
+
+rustup toolchain install 1.96.0-x86_64-pc-windows-msvc --profile minimal --component rustfmt --component clippy
+rustup set default-host x86_64-pc-windows-msvc
+rustup default 1.96.0-x86_64-pc-windows-msvc
+
+重新打开 PowerShell 后再次运行 pnpm check。
+"@
+        }
+
+        Write-Host "Rust host: $rustHost" -ForegroundColor Green
+    }
+
+    Assert-WindowsRustHost
+
     Invoke-NativeStep -Title "Rust 格式检查" -Command "cargo" -Arguments @("fmt", "--check")
 
     Invoke-NativeStep -Title "Rust Clippy" -Command "cargo" -Arguments @("clippy", "--workspace", "--all-targets", "--", "-D", "warnings")
