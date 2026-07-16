@@ -3409,6 +3409,8 @@ Phase 0 文档要求 Commit Hooks，但当前 Task 9 不应在没有工具选择
 
 ## Task 10：Windows Release 冒烟验证
 
+**状态**：已完成（2026-07-16）
+
 **依赖**：Task 9
 
 **目标**：在 Windows x64 MSVC 环境构建一个 NSIS Release 安装包，验证安装、首次启动、数据库初始化、关闭重启和卸载流程，并形成可审计的冒烟验证记录。
@@ -3911,13 +3913,13 @@ Task 5 (React 展示)    Task 6 (SQLite migration)
 - [ ] Rust Core 不直接依赖 React
 - [ ] Application 层不依赖 Tauri（Phase 0 无 Domain 层）
 - [ ] CI 可以运行 Rust 测试、Clippy、fmt、前端类型检查和测试
-- [ ] Release 构建生成 NSIS 安装包
-- [ ] 安装包可以完成安装
-- [ ] 安装后的应用可以启动
-- [ ] 应用显示正确版本和数据目录
-- [ ] SQLite migration v1 正常
-- [ ] 应用可以关闭后再次启动
-- [ ] 卸载程序可用
+- [x] Release 构建生成 NSIS 安装包
+- [x] 安装包可以完成安装
+- [x] 安装后的应用可以启动
+- [x] 应用显示正确版本和数据目录
+- [x] SQLite migration v1 正常
+- [x] 应用可以关闭后再次启动
+- [x] 卸载程序可用
 
 ### Phase 0 遗留项（Task 10 通过后仍需处理）
 

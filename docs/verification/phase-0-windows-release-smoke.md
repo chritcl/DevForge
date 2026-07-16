@@ -4,7 +4,8 @@
 
 - 验证日期：2026-07-16
 - 基础 Git commit SHA：031bced9864cce7e57a835f286c44180e9719e07
-- 构建时工作区状态：干净（仅 tauri.conf.json 有未提交变更）
+- 构建时工作区状态：非干净
+- 构建时未提交文件：apps/desktop/src-tauri/tauri.conf.json
 - tauri.conf.json SHA256：4645B258CF249908629540D7413131EECC87DFAF537266421092F01BE6BB79B5
 
 ## 环境信息
@@ -16,7 +17,10 @@
 - pnpm 版本：10.33.2
 - Rust 版本：1.96.0
 - Rust host：x86_64-pc-windows-msvc
-- Tauri CLI 版本：@tauri-apps/cli@2
+- Tauri CLI 版本：tauri-cli 2.11.4
+- WebView2 Runtime 状态：PASS
+- WebView2 Runtime 版本：150.0.4078.65
+- WebView2 检测范围：HKLM 32-bit
 
 ## 构建信息
 
@@ -35,7 +39,7 @@
 
 - 安装模式：perMachine
 - WebView2 策略：downloadBootstrapper
-- 安装包基于 commit 031bced，并包含报告中记录的未提交 tauri.conf.json 变更
+- 安装包基于 commit 031bced9864cce7e57a835f286c44180e9719e07，并包含报告中记录的未提交 tauri.conf.json 变更
 
 ## 数据保护
 
@@ -44,6 +48,11 @@
 - 重命名目录：C:\Users\<USER>\AppData\Local\DevForge.pre-smoke-20260716-173028
 - 原始目录状态：已重命名（不存在）
 - 备份状态：PASS
+- 卸载后测试数据库：PASS，devforge.db 保留
+- 测试数据归档：C:\Users\<USER>\AppData\Local\DevForge.smoke-20260716-173028
+- 原数据恢复：PASS
+- 原数据目录：C:\Users\<USER>\AppData\Local\DevForge
+- 安全备份保留：C:\Users\<USER>\AppData\Local\DevForge.backup-20260716-173028
 
 ## 质量检查
 
@@ -68,58 +77,65 @@
 | 产品元数据 | PASS |
 | 配置差异检查 | PASS |
 
+## 卸载自动复核
+
+- 卸载注册表状态：PASS（无 DevForge 安装项）
+- Program Files 残留状态：PASS（无 DevForge 目录）
+- DevForge 进程状态：PASS（无运行进程）
+
 ## 人工验证检查点
 
-以下项目需要人工在 Windows 桌面环境中验证：
+人工验证证据来源：
+用户于 2026-07-16 明确确认安装、首次启动、关闭后第二次启动以及卸载验证均成功。
 
 ### 安装检查 (A)
 
 | 检查项 | 状态 |
 |--------|------|
-| A1. 安装器无不可恢复错误 | NOT RUN |
-| A2. 已安装的应用中存在 DevForge | NOT RUN |
-| A3. 版本为 0.1.0 | NOT RUN |
-| A4. 安装路径位于 Program Files | NOT RUN |
-| A5. 安装路径不等于 %LOCALAPPDATA%\DevForge | NOT RUN |
-| A6. 存在主程序 | NOT RUN |
-| A7. 存在卸载程序 | NOT RUN |
-| A8. 存在开始菜单快捷方式 | NOT RUN |
+| A1. 安装器无不可恢复错误 | PASS |
+| A2. 已安装的应用中存在 DevForge | PASS |
+| A3. 版本为 0.1.0 | PASS |
+| A4. 安装路径位于 Program Files | PASS |
+| A5. 安装路径不等于 %LOCALAPPDATA%\DevForge | PASS |
+| A6. 存在主程序 | PASS |
+| A7. 存在卸载程序 | PASS |
+| A8. 存在开始菜单快捷方式 | PASS |
 
 ### 首次启动检查 (B)
 
 | 检查项 | 状态 |
 |--------|------|
-| B1. 窗口能够打开 | NOT RUN |
-| B2. 窗口标题为 DevForge | NOT RUN |
-| B3. 页面显示 DevForge | NOT RUN |
-| B4. 版本显示 0.1.0 | NOT RUN |
-| B5. 数据目录显示 %LOCALAPPDATA%\DevForge | NOT RUN |
-| B6. 数据库状态显示"就绪（migration v1）" | NOT RUN |
-| B7. 不白屏 | NOT RUN |
-| B8. 不立即退出 | NOT RUN |
-| B9. 没有可见 React、Router、Query 或 IPC 错误 | NOT RUN |
+| B1. 窗口能够打开 | PASS |
+| B2. 窗口标题为 DevForge | PASS |
+| B3. 页面显示 DevForge | PASS |
+| B4. 版本显示 0.1.0 | PASS |
+| B5. 数据目录显示 %LOCALAPPDATA%\DevForge | PASS |
+| B6. 数据库状态显示"就绪（migration v1）" | PASS |
+| B7. 不白屏 | PASS |
+| B8. 不立即退出 | PASS |
+| B9. 没有可见 React、Router、Query 或 IPC 错误 | PASS |
 
 ### 第二次启动检查 (C)
 
 | 检查项 | 状态 |
 |--------|------|
-| C1. 第一次可以正常退出 | NOT RUN |
-| C2. 第二次可以正常启动 | NOT RUN |
-| C3. 版本仍为 0.1.0 | NOT RUN |
-| C4. migration 仍为 v1 | NOT RUN |
-| C5. 数据库没有重新初始化错误 | NOT RUN |
+| C1. 第一次可以正常退出 | PASS |
+| C2. 第二次可以正常启动 | PASS |
+| C3. 版本仍为 0.1.0 | PASS |
+| C4. migration 仍为 v1 | PASS |
+| C5. 数据库没有重新初始化错误 | PASS |
 
 ### 卸载检查 (D)
 
 | 检查项 | 状态 |
 |--------|------|
-| D1. 卸载器可以启动 | NOT RUN |
-| D2. 卸载完成 | NOT RUN |
-| D3. Program Files 安装目录被移除 | NOT RUN |
-| D4. 开始菜单快捷方式被移除 | NOT RUN |
-| D5. 已安装的应用不再显示 DevForge | NOT RUN |
-| D6. 没有 DevForge 进程残留 | NOT RUN |
-| D7. %LOCALAPPDATA%\DevForge\devforge.db 仍然存在 | NOT RUN |
+| D1. 卸载器可以启动 | PASS |
+| D2. 卸载完成 | PASS |
+| D3. Program Files 安装目录被移除 | PASS |
+| D4. 开始菜单快捷方式被移除 | PASS |
+| D5. 已安装的应用不再显示 DevForge | PASS |
+| D6. 没有 DevForge 进程残留 | PASS |
+| D7. %LOCALAPPDATA%\DevForge\devforge.db 仍然存在 | PASS |
 
 ## 失败项
 
@@ -127,11 +143,12 @@
 
 ## 未验证项
 
-所有人工验证项目（A1-A8, B1-B9, C1-C5, D1-D7）均未执行。
+无 Task 10 阻塞项。
+代码签名、MSI、离线 WebView2、自动更新不属于本任务范围。
 
 ## 最终结论
 
-INCOMPLETE — 等待人工 Windows 桌面验证
+PASS — Windows NSIS Release 冒烟验证完成
 
 ## 附录：tauri.conf.json 变更
 
