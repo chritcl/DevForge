@@ -21,6 +21,7 @@ interface Props {
 }
 
 interface State {
+  hasError: boolean;
   error: unknown;
 }
 
@@ -29,11 +30,11 @@ export class AppErrorBoundary extends React.Component<Props, State> {
 
   constructor(props: Props) {
     super(props);
-    this.state = { error: null };
+    this.state = { hasError: false, error: null };
   }
 
   static getDerivedStateFromError(error: unknown): State {
-    return { error };
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: unknown, info: React.ErrorInfo): void {
@@ -44,7 +45,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
   }
 
   render(): ReactNode {
-    if (this.state.error !== null) {
+    if (this.state.hasError) {
       return (
         <div className="app-error-boundary" role="alert">
           <h1>应用发生错误</h1>

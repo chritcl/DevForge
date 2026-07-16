@@ -140,8 +140,33 @@ a {
   outline-offset: -2px;
 }
 
+/* 短标签：展开时隐藏，折叠时显示 */
+.navigation-short-label {
+  display: none;
+}
+
 [data-sidebar-collapsed="true"] .navigation-label {
   display: none;
+}
+
+[data-sidebar-collapsed="true"] .navigation-short-label {
+  display: inline;
+}
+
+/* 折叠状态下导航居中 */
+[data-sidebar-collapsed="true"] .primary-navigation {
+  padding-inline: 4px;
+}
+
+[data-sidebar-collapsed="true"] .primary-navigation a {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+/* 折叠按钮适配 48px 宽度 */
+[data-sidebar-collapsed="true"] .sidebar-toggle {
+  padding-inline: 0;
+  white-space: nowrap;
 }
 
 .main-content {

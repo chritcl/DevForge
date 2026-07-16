@@ -27,9 +27,14 @@ export function AppLayout() {
           aria-label={
             sidebarCollapsed ? "展开主导航" : "收起主导航"
           }
+          title={
+            sidebarCollapsed ? "展开主导航" : "收起主导航"
+          }
           onClick={toggleSidebar}
         >
-          {sidebarCollapsed ? "展开" : "收起"}
+          <span aria-hidden="true">
+            {sidebarCollapsed ? "展" : "收起"}
+          </span>
         </button>
 
         <nav className="primary-navigation">
@@ -38,6 +43,12 @@ export function AppLayout() {
             end
             aria-label="首页"
           >
+            <span
+              className="navigation-short-label"
+              aria-hidden="true"
+            >
+              首
+            </span>
             <span className="navigation-label">首页</span>
           </NavLink>
 
@@ -45,6 +56,12 @@ export function AppLayout() {
             to="/settings"
             aria-label="设置"
           >
+            <span
+              className="navigation-short-label"
+              aria-hidden="true"
+            >
+              设
+            </span>
             <span className="navigation-label">设置</span>
           </NavLink>
         </nav>
