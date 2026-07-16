@@ -2159,15 +2159,25 @@ feat(storage): 串联 SQLite 到 Tauri get_app_info 命令
 从仓库根目录运行：
 
 ```powershell
-pnpm --filter @devforge/desktop add react-router@^8.2.0 zustand@^5.0.14
+pnpm --filter @devforge/desktop add react-router@^7.18.1 zustand@^5.0.14
 ```
+
+**版本选择原因**：
+- 当前项目使用 React `19.1.0` 和 React DOM `19.1.0`
+- React Router 8.2.0 要求更高版本的 React 和 React DOM
+- Task 8 不应顺带升级 React 核心版本
+- React Router 7.18.1 与当前 React 版本兼容
+- Task 8 所需的 `createHashRouter`、Route Object `Component`、`ErrorBoundary`、`RouterProvider`、`useRouteError` 等能力在 7.18.1 中均可使用
 
 **要求**：
 - 同时更新 `apps/desktop/package.json` 和 `pnpm-lock.yaml`
 - 不使用未声明依赖
-- 不安装 `react-router-dom`，统一从 `react-router` 导入
+- 不安装 `react-router-dom` 包
+- `RouterProvider` 从 `react-router/dom` 导入
+- 其余 Router API 从 `react-router` 导入
 - 不安装测试依赖、UI 组件库、CSS 框架、图标库
 - 不添加当前任务没有使用者的依赖
+- 不升级 `react`、`react-dom`、`@types/react`、`@types/react-dom`
 
 ### apps/desktop/src/router.tsx
 
@@ -2325,13 +2335,20 @@ export const useUIStore = create<UIState>()(
 
 实际 DOM 主题只能是 `light` 或 `dark`，不得设置 `data-theme="system"`。
 
+**首次渲染要求**：
+- 优先使用 `useLayoutEffect` 同步主题
+- 在浏览器绘制前设置 `data-theme` 和 `color-scheme`
+- 减少持久化暗色主题启动时先显示浅色再切换的闪烁
+
 **要求**：
 - 不每次 render 重复注册 listener
 - 不忘记 cleanup
 - 不把 MediaQueryList 放进 Zustand
-- 不在模块加载时直接访问 window
+- 不在模块加载阶段直接访问 `window` 或 `document`
 - 不创建 MutationObserver
 - 不使用轮询
+- system 模式仍需注册 `matchMedia` change listener
+- effect cleanup 时仍需移除 listener
 
 ### apps/desktop/src/layouts/AppLayout.tsx
 
@@ -2469,7 +2486,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { RouterProvider } from "react-router";
+import { RouterProvider } from "react-router/dom";
 
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { router } from "./router";
@@ -2497,6 +2514,8 @@ ReactDOM.createRoot(
 - 不在组件中创建 QueryClient
 - 全局 CSS 只导入一次
 - 不删除 QueryClientProvider
+- `RouterProvider` 从 `react-router/dom` 导入
+- 其余 Router API（如 `createHashRouter`、`NavLink`、`Outlet`）从 `react-router` 导入
 
 ### apps/desktop/src/styles/global.css
 
@@ -2588,6 +2607,24 @@ pnpm dev:desktop
 ```
 feat(frontend): 建立 Hash Router、主题系统和双层错误边界
 ```
+
+### 跨任务备注
+
+#### Task 9 测试需要更新
+
+Task 8 完成后：
+- `App.tsx` → 根布局和主题同步
+- `HomePage.tsx` → AppInfo 加载、错误、重试和成功状态
+
+因此 Task 9 中旧的"直接渲染 App 并断言'加载中...'"已经不再准确。
+
+**Task 9 审核时需要将前端测试更新为 Router/HomePage 测试，本次 Task 8 不提前修改 Task 9。**
+
+#### Command Palette 尚未安排
+
+Phase 0 目标中仍包含 Command Palette 框架，但当前 Task 8 明确不实现，Task 9 和 Task 10 也没有覆盖。
+
+**需要后续新增独立 Command Palette 基础任务，或明确将其延期到后续阶段。本次 Task 8 不实现。**
 
 ---
 
