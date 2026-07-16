@@ -3411,34 +3411,466 @@ Phase 0 文档要求 Commit Hooks，但当前 Task 9 不应在没有工具选择
 
 **依赖**：Task 9
 
-**目标**：Release 构建可安装、可启动、可展示正确信息。
+**目标**：在 Windows x64 MSVC 环境构建一个 NSIS Release 安装包，验证安装、首次启动、数据库初始化、关闭重启和卸载流程，并形成可审计的冒烟验证记录。
 
-### 验证步骤
+### 包含
 
-```powershell
-# 1. Release 构建
-cd apps/desktop
-pnpm tauri build
+- 启用 Tauri Windows bundle
+- 仅生成 NSIS 安装包
+- Release 构建
+- 安装包元数据与 SHA256
+- 安装流程
+- 首次启动
+- AppInfo 展示
+- SQLite Migration
+- 关闭与重新启动
+- 卸载流程
+- 应用数据保护
+- 冒烟验证报告
 
-# 2. 安装包位置
-# target/release/bundle/msi/DevForge_0.1.0_x64_en-US.msi
-# 或 target/release/bundle/nsis/DevForge_0.1.0_x64-setup.exe
+### 不包含
 
-# 3. 安装并启动
+- MSI
+- GitHub Release
+- 安装包上传
+- 代码签名
+- 自动更新
+- Windows Store
+- E2E 测试框架
+- WebDriver
+- Command Palette
+- Commit Hooks
+- 基础日志系统
+- Phase 1 功能
 
-# 4. 验证：
-# - 窗口标题为 "DevForge"
-# - 显示版本号 0.1.0
-# - 显示有效数据目录路径
-# - 显示数据库状态 "就绪 (migration v1)"
-# - 无 panic、无 crash
+### 精确文件
 
-# 5. 验证数据目录（%LOCALAPPDATA%\DevForge，与 dirs::data_local_dir() 一致）
-ls "$env:LOCALAPPDATA\DevForge"
-# 应包含 devforge.db, devforge.db-wal, devforge.db-shm
+Task 10 实施时只允许修改或创建：
+
+| 文件 | 职责 |
+|------|------|
+| `apps/desktop/src-tauri/tauri.conf.json` | 启用 NSIS bundle，明确安装模式和 WebView2 策略 |
+| `docs/verification/phase-0-windows-release-smoke.md` | 记录实际构建、安装、启动、数据和卸载验证证据 |
+| `docs/plans/phase-0-foundation-plan.md` | 在验证真正通过后更新 Task 10 与相关退出条件状态 |
+
+**不得修改**：
+
+```text
+apps/desktop/src/**
+apps/desktop/package.json
+package.json
+pnpm-lock.yaml
+apps/desktop/src-tauri/src/**
+apps/desktop/src-tauri/Cargo.toml
+crates/**
+Cargo.toml
+Cargo.lock
+.github/workflows/**
+scripts/check.ps1
+rust-toolchain.toml
+.node-version
+apps/desktop/src/bindings.ts
+docs/phases/phase-0-foundation.md
 ```
 
-**预期结果**：安装成功，启动正常，数据正确展示。
+**不得提交生成的**：
+
+```text
+target/**
+dist/**
+*.exe
+*.msi
+```
+
+### Windows 安装包策略
+
+Task 10 只构建 NSIS x64 安装包，不构建 MSI。
+
+**原因**：
+- Phase 0 只需要证明 Release 可以安装和启动；
+- NSIS 足以满足退出条件；
+- 避免引入 WiX 和 VBSCRIPT 可选功能相关问题；
+- 避免一次验证两套安装器，扩大测试矩阵。
+
+**目标架构**：`x86_64-pc-windows-msvc`
+
+**不验证**：i686、ARM64、Windows 7、跨平台交叉编译。
+
+### Tauri bundle 配置
+
+计划在 `apps/desktop/src-tauri/tauri.conf.json` 中增加：
+
+```json
+{
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine"
+      }
+    }
+  }
+}
+```
+
+**保留现有**：productName = DevForge、version = 0.1.0、identifier = com.devforge.app、窗口标题 = DevForge、frontendDist、beforeBuildCommand。
+
+#### 为什么使用 perMachine
+
+当前应用数据目录为 `%LOCALAPPDATA%\DevForge`。Tauri NSIS 的 `currentUser` 模式默认也会安装到 `%LOCALAPPDATA%\DevForge`，两者会发生目录重叠。
+
+因此 Task 10 选择 `installMode = perMachine`，使安装目录位于 Program Files，与用户数据目录分离。
+
+**要求**：
+- 安装时允许出现 UAC；
+- 不改变应用数据目录；
+- 不增加自定义 NSIS template；
+- 不增加 installer hook；
+- 不增加自定义安装路径逻辑；
+- 不修改 Rust 数据目录代码；
+- 不使用 `currentUser` 或 `both`；
+- 不启用 updater；
+- 不启用签名；
+- 不创建 MSI。
+
+#### WebView2 策略
+
+使用 `"type": "downloadBootstrapper"`。
+
+**要求**：
+- 保持 Tauri 默认的小体积策略；
+- 如果系统已有 WebView2，不应重新安装；
+- 如果系统缺少 WebView2，需要网络下载安装；
+- 不使用 `skip`；
+- 不嵌入约 127MB 的离线安装器；
+- 在验证报告中记录当前机器是否已安装 WebView2；
+- 不把"离线安装能力"列为 Phase 0 通过条件。
+
+### 执行前环境检查
+
+Task 10 实施前记录：
+
+```powershell
+git rev-parse HEAD
+git status --short
+
+$PSVersionTable.PSVersion
+[Environment]::OSVersion.Version
+$env:PROCESSOR_ARCHITECTURE
+
+node --version
+pnpm --version
+rustc --version --verbose
+cargo --version
+
+pnpm --filter @devforge/desktop tauri info
+```
+
+**必须确认**：
+- Windows x64
+- Rust 1.96.0
+- Rust host 为 x86_64-pc-windows-msvc
+- Node v22.22.2
+- pnpm 10.33.2
+- Git 工作区不存在未知修改
+
+如果存在用户已有修改：不覆盖、不执行清理命令、在报告中记录、只有确认不会污染 Release 验证时才继续。
+
+### 数据安全准备
+
+应用使用的数据目录：
+
+```powershell
+$dataDir = Join-Path $env:LOCALAPPDATA "DevForge"
+```
+
+开始安装验证前：
+1. 确认 DevForge 开发版和安装版均已关闭；
+2. 检查是否已有 DevForge 安装；
+3. 检查数据目录是否已存在；
+4. 不删除现有数据。
+
+如果数据目录已存在，先备份：
+
+```powershell
+$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$backupDir = Join-Path $env:LOCALAPPDATA "DevForge.backup-$timestamp"
+
+Copy-Item $dataDir $backupDir -Recurse
+```
+
+**要求**：
+- 不使用 `Remove-Item -Recurse` 删除用户数据；
+- 不覆盖已有备份；
+- 记录原数据目录是否存在；
+- 记录备份路径；
+- 冒烟验证结束后恢复原始环境；
+- 推荐在专用 Windows 测试用户或虚拟机中验证；
+- 若当前机器有真实用户数据，未经明确确认不得重置数据库。
+
+为了验证空数据库 Migration，可以在完成备份后将现有目录重命名，而不是删除：
+
+```powershell
+Rename-Item $dataDir "DevForge.pre-smoke-$timestamp"
+```
+
+只有目录不存在时，才视为真正的首次启动环境。
+
+### 构建前质量检查
+
+从仓库根目录运行：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm check
+```
+
+要求所有 Task 9 检查通过。
+
+然后确认：
+
+```powershell
+git diff --exit-code -- apps/desktop/src/bindings.ts
+git diff --exit-code -- apps/desktop/src-tauri/src
+git diff --exit-code -- crates
+git diff --exit-code -- Cargo.toml
+git diff --exit-code -- Cargo.lock
+git diff --check
+```
+
+除计划允许的 Tauri 配置和验证文档外，不得有生产代码变化。
+
+### 构建 NSIS Release
+
+从仓库根目录执行：
+
+```powershell
+$buildStartedAt = Get-Date
+
+pnpm --filter @devforge/desktop tauri build --ci
+```
+
+不得使用 `--no-bundle`。构建必须生成 NSIS 安装包。
+
+不要硬编码完整文件名。从 Workspace 根目录动态查找：
+
+```powershell
+$bundleDir = Join-Path $PWD "target\release\bundle\nsis"
+
+$installer = Get-ChildItem $bundleDir -Filter "*-setup.exe" |
+    Where-Object { $_.LastWriteTime -ge $buildStartedAt } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+```
+
+如果未找到安装包，Task 10 失败。
+
+**记录**：
+
+```powershell
+$installer.FullName
+$installer.Length
+$installer.LastWriteTime
+Get-FileHash $installer.FullName -Algorithm SHA256
+```
+
+**要求**：
+- 安装包大小大于 0；
+- 记录实际文件名；
+- 记录文件大小；
+- 记录 SHA256；
+- 不假定固定名称为 `DevForge_0.1.0_x64-setup.exe`；
+- 不提交安装包；
+- 不上传安装包；
+- 未签名安装包出现"未知发布者"提示不作为 Phase 0 失败；
+- 不尝试临时生成签名证书。
+
+### 安装验证
+
+使用生成的 NSIS 安装包进行交互式安装。
+
+**要求**：
+- 允许 UAC；
+- 使用默认安装路径；
+- 不修改安装目录；
+- 不使用静默安装掩盖安装器界面问题；
+- 不跳过 WebView2 检查；
+- 不运行来源不明的其他安装包。
+
+**安装完成后验证**：
+1. Windows"已安装的应用"中存在 DevForge；
+2. 显示版本为 0.1.0；
+3. 安装位置位于 Program Files；
+4. 安装目录不等于 `%LOCALAPPDATA%\DevForge`；
+5. 存在 DevForge 可执行文件；
+6. 存在卸载程序；
+7. 开始菜单存在 DevForge 快捷方式；
+8. 安装过程没有不可恢复错误。
+
+**记录实际**：安装目录、可执行文件路径、卸载程序路径、开始菜单快捷方式路径。
+
+### 首次启动验证
+
+从开始菜单启动安装后的 DevForge，不从 `target/release` 直接启动。
+
+**验证**：
+1. 主窗口能够打开；
+2. 窗口标题为 DevForge；
+3. 页面显示 DevForge；
+4. 版本为 0.1.0；
+5. 数据目录为 `%LOCALAPPDATA%\DevForge`；
+6. 数据库状态为"就绪（migration v1）"；
+7. 页面不存在白屏；
+8. 没有 panic；
+9. 没有立即退出；
+10. 没有 React、Router、Query 或 IPC 可见错误。
+
+**检查数据库**：
+
+```powershell
+$dbPath = Join-Path $env:LOCALAPPDATA "DevForge\devforge.db"
+
+Test-Path $dbPath
+Get-Item $dbPath
+```
+
+**必须满足**：devforge.db 存在、文件大小大于 0。
+
+`devforge.db-wal` 和 `devforge.db-shm`：应用运行期间可能存在，应用正常退出后可能被 SQLite 自动删除，不作为通过或失败的强制条件。不得手动创建 WAL 或 SHM 文件。
+
+### 关闭和重新启动
+
+首次验证后：
+1. 正常关闭 DevForge；
+2. 确认进程结束；
+3. 再次从开始菜单启动；
+4. 确认仍然正常显示；
+5. 确认版本仍为 0.1.0；
+6. 确认数据库仍为 migration v1；
+7. 确认没有重新初始化失败；
+8. 再次正常关闭。
+
+**这一步验证**：安装后的可执行文件可以重复启动；SQLite 数据在进程重启后仍可使用；应用不是只在首次启动时偶然成功。
+
+### 卸载验证
+
+确保 DevForge 已关闭后，从 Windows"已安装的应用"运行卸载。
+
+**验证**：
+1. 卸载程序可以启动；
+2. 卸载完成；
+3. Program Files 中的 DevForge 安装目录被移除；
+4. 开始菜单快捷方式被移除；
+5. 已安装应用列表不再显示 DevForge；
+6. 不残留运行中的 DevForge 进程。
+
+**用户数据处理**：`%LOCALAPPDATA%\DevForge` 默认视为用户数据，不应因为普通卸载而被测试脚本主动删除。
+
+**验证卸载后数据保留**：
+
+```powershell
+Test-Path "$env:LOCALAPPDATA\DevForge\devforge.db"
+```
+
+记录卸载后数据库是否保留。不得为了让安装目录看起来干净而删除用户数据。
+
+### 恢复验证前环境
+
+如果验证前存在数据备份或重命名目录：
+1. 确认安装版已卸载；
+2. 确认没有 DevForge 进程；
+3. 保存本次冒烟产生的测试数据库信息；
+4. 移走本次测试产生的 `DevForge` 目录；
+5. 将原始目录恢复为 `DevForge`；
+6. 不覆盖原数据；
+7. 在报告中记录恢复结果。
+
+任何删除操作都必须仅针对本次验证创建、且已经确认路径无误的目录。不得使用模糊通配符删除 `%LOCALAPPDATA%` 内容。
+
+### 验证报告
+
+新增 `docs/verification/phase-0-windows-release-smoke.md`，至少包含：
+
+```text
+验证日期
+Git commit SHA
+Windows 版本
+系统架构
+PowerShell 版本
+Node 版本
+pnpm 版本
+Rust 版本和 host
+Tauri CLI 版本
+WebView2 状态
+构建命令
+安装包实际路径
+安装包文件名
+文件大小
+SHA256
+安装模式
+实际安装目录
+实际数据目录
+首次启动结果
+版本展示结果
+数据库 migration 结果
+第二次启动结果
+卸载结果
+卸载后数据状态
+原数据备份路径
+原环境恢复结果
+失败项
+未验证项
+最终结论
+```
+
+**每项使用**：`PASS`、`FAIL`、`NOT RUN`、`NOT APPLICABLE`。
+
+**要求**：
+- 不得在未实际执行时写 PASS；
+- 不得只写"安装正常"，必须记录可复核证据；
+- 不把用户名、访问令牌、完整私人目录或其他敏感信息提交到文档；
+- 用户名路径应脱敏，例如 `C:\Users\<USER>\AppData\Local\DevForge`。
+
+### 阶段退出条件更新
+
+只有以下条件实际满足后，才在计划中勾选：
+1. Release 构建生成 NSIS 安装包；
+2. 安装包可以完成安装；
+3. 安装后的应用可以启动；
+4. 应用显示正确版本和数据目录；
+5. SQLite migration v1 正常；
+6. 应用可以关闭后再次启动；
+7. 卸载程序可用。
+
+不得仅因为 `tauri build` 成功就标记 Task 10 完成。
+
+### Phase 0 遗留范围
+
+在 Task 10 末尾明确记录：
+- Command Palette 框架尚未实现；
+- Commit Hooks 尚未实现；
+- 基础日志尚未实现。
+
+Task 10 不实现这些内容。Task 10 通过仅表示：**Phase 0 的 Release 安装与启动退出条件通过。**
+
+在正式声明整个 Phase 0 完成前，必须二选一：
+- A. 新增任务实现这些能力；
+- B. 经用户确认后修改 Phase 0 规格，将其正式延期。
+
+不得静默忽略或自行宣布延期。
+
+### Task 10 验证边界
+
+**Claude Code 可以自动完成**：质量检查、修改 Tauri bundle 配置、构建 NSIS、定位安装包、计算 SHA256、检查文件系统、检查进程、填写自动验证证据。
+
+**以下步骤需要人工确认或可观察的 Windows 桌面环境**：UAC、安装器界面、窗口实际显示内容、开始菜单启动、第二次启动、Windows 卸载界面。
+
+无法直接观察时必须标记 `NOT RUN`，不得猜测或声称已通过。
 
 ### 提交信息
 
@@ -3479,4 +3911,18 @@ Task 5 (React 展示)    Task 6 (SQLite migration)
 - [ ] Rust Core 不直接依赖 React
 - [ ] Application 层不依赖 Tauri（Phase 0 无 Domain 层）
 - [ ] CI 可以运行 Rust 测试、Clippy、fmt、前端类型检查和测试
-- [ ] Release 构建可以安装和启动
+- [ ] Release 构建生成 NSIS 安装包
+- [ ] 安装包可以完成安装
+- [ ] 安装后的应用可以启动
+- [ ] 应用显示正确版本和数据目录
+- [ ] SQLite migration v1 正常
+- [ ] 应用可以关闭后再次启动
+- [ ] 卸载程序可用
+
+### Phase 0 遗留项（Task 10 通过后仍需处理）
+
+- [ ] Command Palette 框架
+- [ ] Commit Hooks
+- [ ] 基础日志系统
+
+以上三项不在 Phase 0 Release 安装验证范围内，需新增独立任务或经用户确认后正式延期。
