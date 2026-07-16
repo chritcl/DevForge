@@ -13,28 +13,38 @@ async fn database_opens_with_correct_pragmas() -> Result<(), Box<dyn std::error:
     let db = Database::open(&db_path).await?;
     let pool = db.pool();
 
-    // 验证数据库文件被创建
-    assert!(db_path.exists(), "数据库文件应被创建");
+    // 在内部 async block 中执行所有可能使用 ? 的数据库操作
+    let observed: Result<_, Box<dyn std::error::Error>> = async {
+        let file_exists = db_path.exists();
 
-    // 验证 PRAGMA journal_mode = wal
-    let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
-        .fetch_one(pool)
-        .await?;
+        let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(pool)
+            .await?;
+
+        let foreign_keys: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(pool)
+            .await?;
+
+        let busy_timeout: i64 = sqlx::query_scalar("PRAGMA busy_timeout")
+            .fetch_one(pool)
+            .await?;
+
+        Ok((file_exists, journal_mode, foreign_keys, busy_timeout))
+    }
+    .await;
+
+    // 无条件关闭 Pool
+    pool.close().await;
+
+    // 传播数据库操作错误
+    let (file_exists, journal_mode, foreign_keys, busy_timeout) = observed?;
+
+    // 所有断言在关闭 Pool 之后执行
+    assert!(file_exists, "数据库文件应被创建");
     assert_eq!(journal_mode, "wal", "journal_mode 应为 wal");
-
-    // 验证 PRAGMA foreign_keys = 1
-    let foreign_keys: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
-        .fetch_one(pool)
-        .await?;
     assert_eq!(foreign_keys, 1, "foreign_keys 应为 1");
-
-    // 验证 PRAGMA busy_timeout = 5000
-    let busy_timeout: i64 = sqlx::query_scalar("PRAGMA busy_timeout")
-        .fetch_one(pool)
-        .await?;
     assert_eq!(busy_timeout, 5000, "busy_timeout 应为 5000");
 
-    pool.close().await;
     Ok(())
 }
 
@@ -47,22 +57,34 @@ async fn migration_runs_on_empty_database() -> Result<(), Box<dyn std::error::Er
     let db = Database::open(&db_path).await?;
     let pool = db.pool();
 
-    // 执行 migration
-    migrator::run_migrations(pool).await?;
+    let observed: Result<_, Box<dyn std::error::Error>> = async {
+        // 执行 migration
+        migrator::run_migrations(pool).await?;
 
-    // 验证 app_meta 表存在
-    let table_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'",
-    )
-    .fetch_one(pool)
-    .await?;
-    assert_eq!(table_count.0, 1, "app_meta 表应存在");
+        // 验证 app_meta 表存在
+        let table_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'",
+        )
+        .fetch_one(pool)
+        .await?;
 
-    // 验证 schema_version == 1
-    let version = migrator::schema_version(pool).await?;
+        // 验证 schema_version == 1
+        let version = migrator::schema_version(pool).await?;
+
+        Ok((table_count.0, version))
+    }
+    .await;
+
+    // 无条件关闭 Pool
+    pool.close().await;
+
+    // 传播数据库操作错误
+    let (table_count, version) = observed?;
+
+    // 所有断言在关闭 Pool 之后执行
+    assert_eq!(table_count, 1, "app_meta 表应存在");
     assert_eq!(version, 1, "schema_version 应为 1");
 
-    pool.close().await;
     Ok(())
 }
 
@@ -75,25 +97,37 @@ async fn migration_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
     let db = Database::open(&db_path).await?;
     let pool = db.pool();
 
-    // 第一次执行
-    migrator::run_migrations(pool).await?;
+    let observed: Result<_, Box<dyn std::error::Error>> = async {
+        // 第一次执行
+        migrator::run_migrations(pool).await?;
 
-    // 第二次执行
-    migrator::run_migrations(pool).await?;
+        // 第二次执行
+        migrator::run_migrations(pool).await?;
 
-    // 验证 schema_version 仍为 1
-    let version = migrator::schema_version(pool).await?;
-    assert_eq!(version, 1, "重复执行后 schema_version 应仍为 1");
+        // 验证 schema_version 仍为 1
+        let version = migrator::schema_version(pool).await?;
 
-    // 验证 app_meta 仍只有一个表定义
-    let table_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'",
-    )
-    .fetch_one(pool)
-    .await?;
-    assert_eq!(table_count.0, 1, "app_meta 表应仍只有一个");
+        // 验证 app_meta 仍只有一个表定义
+        let table_count: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_meta'",
+        )
+        .fetch_one(pool)
+        .await?;
 
+        Ok((version, table_count.0))
+    }
+    .await;
+
+    // 无条件关闭 Pool
     pool.close().await;
+
+    // 传播数据库操作错误
+    let (version, table_count) = observed?;
+
+    // 所有断言在关闭 Pool 之后执行
+    assert_eq!(version, 1, "重复执行后 schema_version 应仍为 1");
+    assert_eq!(table_count, 1, "app_meta 表应仍只有一个");
+
     Ok(())
 }
 
@@ -106,22 +140,34 @@ async fn health_status_ready_after_migration() -> Result<(), Box<dyn std::error:
     let db = Database::open(&db_path).await?;
     let pool = db.pool();
 
-    // 执行 migration
-    migrator::run_migrations(pool).await?;
+    let observed: Result<_, Box<dyn std::error::Error>> = async {
+        // 执行 migration
+        migrator::run_migrations(pool).await?;
 
-    // 构造 SqliteDatabaseStatus
-    let provider = SqliteDatabaseStatus::new(pool.clone());
-    let status = provider.status().await;
+        // 构造 SqliteDatabaseStatus
+        let provider = SqliteDatabaseStatus::new(pool.clone());
+        let status = provider.status().await;
 
-    // 验证返回 Ready
-    match status {
-        DbStatus::Ready { migration_version } => {
-            assert_eq!(migration_version, 1, "migration_version 应为 1");
-        }
-        other => panic!("预期 Ready，实际：{other:?}"),
+        Ok((status, provider))
     }
+    .await;
 
+    // 无条件关闭 Pool
     pool.close().await;
+
+    // 传播数据库操作错误
+    let (status, _provider) = observed?;
+
+    // 计算布尔值，然后断言
+    let is_ready = matches!(
+        status,
+        DbStatus::Ready {
+            migration_version: 1
+        }
+    );
+
+    assert!(is_ready, "数据库状态应为 Ready，migration_version 应为 1");
+
     Ok(())
 }
 
@@ -134,18 +180,25 @@ async fn health_status_error_without_migration() -> Result<(), Box<dyn std::erro
     let db = Database::open(&db_path).await?;
     let pool = db.pool();
 
-    // 不执行 migration，直接构造 SqliteDatabaseStatus
-    let provider = SqliteDatabaseStatus::new(pool.clone());
-    let status = provider.status().await;
+    let observed: Result<_, Box<dyn std::error::Error>> = async {
+        // 不执行 migration，直接构造 SqliteDatabaseStatus
+        let provider = SqliteDatabaseStatus::new(pool.clone());
+        let status = provider.status().await;
 
-    // 验证返回 Error（不是 NotInitialized，不是 panic）
-    match status {
-        DbStatus::Error { .. } => {
-            // 预期结果
-        }
-        other => panic!("预期 Error，实际：{other:?}"),
+        Ok((status, provider))
     }
+    .await;
 
+    // 无条件关闭 Pool
     pool.close().await;
+
+    // 传播数据库操作错误
+    let (status, _provider) = observed?;
+
+    // 计算布尔值，然后断言
+    let is_error = matches!(status, DbStatus::Error { .. });
+
+    assert!(is_error, "数据库状态应为 Error");
+
     Ok(())
 }
