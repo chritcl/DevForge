@@ -2121,62 +2121,272 @@ feat(storage): 串联 SQLite 到 Tauri get_app_info 命令
 
 ## Task 8：前端基础设施 — Router、Theme、ErrorBoundary
 
-**依赖**：Task 5
+**依赖**：Task 5, Task 7
 
-**目标**：建立前端路由、主题切换、错误边界基础框架。
+**目标**：建立适合 Tauri 桌面静态壳的 Hash Router，保留 Task 5 的 AppInfo 三态页面，实现可持久化且跟随系统变化的主题系统，建立基础导航布局、路由级错误边界和应用级错误边界。
+
+**不实现**：Command Palette、Vitest、Testing Library、CI、Tauri 或 Rust 修改、新 IPC、Task 9。
 
 ### 精确文件
 
 | 文件 | 职责 |
 |------|------|
-| `apps/desktop/src/main.tsx` | 更新：添加 Router |
-| `apps/desktop/src/App.tsx` | 更新：使用 layout |
-| `apps/desktop/src/router.tsx` | 路由配置 |
-| `apps/desktop/src/layouts/AppLayout.tsx` | 基础布局骨架 |
-| `apps/desktop/src/pages/HomePage.tsx` | 首页（原 App 内容） |
-| `apps/desktop/src/pages/SettingsPage.tsx` | 设置页占位 |
-| `apps/desktop/src/components/ErrorBoundary.tsx` | 错误边界 |
-| `apps/desktop/src/stores/ui.ts` | Zustand UI 状态 |
-| `apps/desktop/src/styles/global.css` | 全局样式 |
+| `apps/desktop/package.json` | 添加 react-router 和 zustand 依赖 |
+| `pnpm-lock.yaml` | pnpm install 更新 |
+| `apps/desktop/src/main.tsx` | 更新：添加 AppErrorBoundary 和 RouterProvider |
+| `apps/desktop/src/App.tsx` | 更新：根路由组件，同步主题，渲染 AppLayout |
+| `apps/desktop/src/router.tsx` | Hash Router 配置 |
+| `apps/desktop/src/layouts/AppLayout.tsx` | 导航布局，使用 sidebarCollapsed 和 toggleSidebar |
+| `apps/desktop/src/pages/HomePage.tsx` | 首页（从 App.tsx 迁移 Task 5 内容） |
+| `apps/desktop/src/pages/SettingsPage.tsx` | 设置页（主题选择） |
+| `apps/desktop/src/pages/RouteErrorPage.tsx` | 路由级错误页 |
+| `apps/desktop/src/pages/NotFoundPage.tsx` | 404 页面 |
+| `apps/desktop/src/components/AppErrorBoundary.tsx` | 应用级错误边界 |
+| `apps/desktop/src/hooks/useThemeSync.ts` | 主题同步 Hook |
+| `apps/desktop/src/stores/ui.ts` | Zustand UI 状态（persist） |
+| `apps/desktop/src/styles/global.css` | 全局样式和主题变量 |
+
+**不得修改**：
+- `apps/desktop/src/hooks/useAppInfo.ts`
+- `apps/desktop/src/components/HealthStatus.tsx`
+- `apps/desktop/src/bindings.ts`
+- `apps/desktop/src/queryKeys.ts`
+- `apps/desktop/src-tauri/**`
+- `crates/**`
 
 ### 依赖安装
 
+从仓库根目录运行：
+
 ```powershell
-cd apps/desktop
-pnpm add zustand
+pnpm --filter @devforge/desktop add react-router@^8.2.0 zustand@^5.0.14
 ```
+
+**要求**：
+- 同时更新 `apps/desktop/package.json` 和 `pnpm-lock.yaml`
+- 不使用未声明依赖
+- 不安装 `react-router-dom`，统一从 `react-router` 导入
+- 不安装测试依赖、UI 组件库、CSS 框架、图标库
+- 不添加当前任务没有使用者的依赖
 
 ### apps/desktop/src/router.tsx
 
+使用 `createHashRouter`，不得使用 `createBrowserRouter`。
+
+Router 在模块顶层只创建一次，不放在 React state 或组件渲染函数中。
+
 ```typescript
-import { createBrowserRouter } from "react-router";
-import { AppLayout } from "./layouts/AppLayout";
+import { createHashRouter } from "react-router";
+
+import App from "./App";
 import { HomePage } from "./pages/HomePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
+import { RouteErrorPage } from "./pages/RouteErrorPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   {
     path: "/",
-    element: <AppLayout />,
+    Component: App,
+    ErrorBoundary: RouteErrorPage,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: "settings", element: <SettingsPage /> },
+      {
+        index: true,
+        Component: HomePage,
+      },
+      {
+        path: "settings",
+        Component: SettingsPage,
+      },
+      {
+        path: "*",
+        Component: NotFoundPage,
+      },
     ],
   },
 ]);
 ```
 
-### apps/desktop/src/layouts/AppLayout.tsx
+**要求**：
+- 使用 Route Object 的 `Component`
+- 根路由配置 `ErrorBoundary`
+- 增加 `path: "*"` 处理 404
+- 设置页地址为 `#/settings`
+- 不使用 Browser History
+- 不创建自定义 History
+- 不加入 loader 或 action
+- 不改变 IPC 调用方式
+
+### apps/desktop/src/App.tsx
+
+App.tsx 保留为根路由组件，职责：
+
+```text
+同步当前主题到 DOM
+→ 渲染 AppLayout
+→ AppLayout 内渲染 Outlet
+```
 
 ```typescript
-import { Outlet } from "react-router";
+import { AppLayout } from "./layouts/AppLayout";
+import { useThemeSync } from "./hooks/useThemeSync";
+
+export default function App() {
+  useThemeSync();
+
+  return <AppLayout />;
+}
+```
+
+**要求**：
+- 不在 App 中重新调用 `useAppInfo()`
+- 不在 App 中直接访问 Router API
+
+### apps/desktop/src/pages/HomePage.tsx
+
+将当前 `App.tsx` 中 Task 5 的内容完整迁移到 `HomePage.tsx`。
+
+必须保留：
+- `useAppInfo()`
+- `isPending` 加载状态
+- `isError` 错误状态
+- `role="alert"`
+- 安全的 `getErrorMessage()`
+- 手动重试
+- 重试期间禁用按钮
+- AppInfo 成功展示
+- `HealthStatus`
+- 版本、数据目录、数据库状态
+
+迁移过程中不得：
+- 删除错误重试
+- 删除加载状态
+- 添加重复类型
+- 手写 AppInfo
+- 直接调用 Tauri invoke
+- 修改 `useAppInfo()`
+- 修改 bindings
+
+### apps/desktop/src/stores/ui.ts
+
+使用 Zustand `persist`。
+
+```typescript
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+export type ThemePreference = "light" | "dark" | "system";
+
+interface UIState {
+  theme: ThemePreference;
+  sidebarCollapsed: boolean;
+  setTheme: (theme: ThemePreference) => void;
+  toggleSidebar: () => void;
+}
+
+export const useUIStore = create<UIState>()(
+  persist(
+    (set) => ({
+      theme: "system",
+      sidebarCollapsed: false,
+      setTheme: (theme) => set({ theme }),
+      toggleSidebar: () =>
+        set((state) => ({
+          sidebarCollapsed: !state.sidebarCollapsed,
+        })),
+    }),
+    {
+      name: "devforge-ui",
+      partialize: (state) => ({
+        theme: state.theme,
+        sidebarCollapsed: state.sidebarCollapsed,
+      }),
+    },
+  ),
+);
+```
+
+**要求**：
+- 只持久化用户偏好
+- 不持久化函数
+- 不持久化计算后的 resolved theme
+- 不直接在 Store 创建时修改 DOM
+- 不读取 Tauri 文件系统
+- 不创建第二套主题状态
+
+### apps/desktop/src/hooks/useThemeSync.ts
+
+职责：
+1. 从 `useUIStore` 读取 theme
+2. system 模式通过 `window.matchMedia("(prefers-color-scheme: dark)")` 解析实际主题
+3. 设置 `document.documentElement.dataset.theme` 和 `document.documentElement.style.colorScheme`
+4. system 模式监听系统主题变化
+5. effect cleanup 时移除监听
+
+实际 DOM 主题只能是 `light` 或 `dark`，不得设置 `data-theme="system"`。
+
+**要求**：
+- 不每次 render 重复注册 listener
+- 不忘记 cleanup
+- 不把 MediaQueryList 放进 Zustand
+- 不在模块加载时直接访问 window
+- 不创建 MutationObserver
+- 不使用轮询
+
+### apps/desktop/src/layouts/AppLayout.tsx
+
+`AppLayout` 必须真正使用 `sidebarCollapsed` 和 `toggleSidebar`。
+
+布局至少包括：
+- `<aside aria-label="主导航">`
+- 首页 `NavLink`
+- 设置 `NavLink`
+- Active 样式
+- 折叠按钮
+- `aria-expanded`
+- `<main>`
+- `<Outlet />`
+
+```typescript
+import { NavLink, Outlet } from "react-router";
+
+import { useUIStore } from "../stores/ui";
 
 export function AppLayout() {
+  const sidebarCollapsed = useUIStore(
+    (state) => state.sidebarCollapsed,
+  );
+  const toggleSidebar = useUIStore(
+    (state) => state.toggleSidebar,
+  );
+
   return (
-    <div className="app-layout">
-      <aside className="activity-bar">
-        {/* Activity Bar 占位 */}
+    <div
+      className="app-layout"
+      data-sidebar-collapsed={sidebarCollapsed}
+    >
+      <aside
+        className="activity-bar"
+        aria-label="主导航"
+      >
+        <button
+          type="button"
+          aria-expanded={!sidebarCollapsed}
+          onClick={toggleSidebar}
+        >
+          {sidebarCollapsed ? "展开" : "收起"}
+        </button>
+
+        <nav>
+          <NavLink to="/" end>
+            首页
+          </NavLink>
+          <NavLink to="/settings">
+            设置
+          </NavLink>
+        </nav>
       </aside>
+
       <main className="main-content">
         <Outlet />
       </main>
@@ -2185,143 +2395,205 @@ export function AppLayout() {
 }
 ```
 
-### apps/desktop/src/components/ErrorBoundary.tsx
+**要求**：
+- 允许优化标签和类名
+- 必须满足可访问性和实际使用 Store
 
-```typescript
-import { Component, type ReactNode } from "react";
+### apps/desktop/src/pages/SettingsPage.tsx
 
-interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
-}
+设置页不能只是空占位。至少提供三个主题选项：浅色、深色、跟随系统。
 
-interface State {
-  hasError: boolean;
-  error: Error | null;
-}
+使用 radio group 或原生 select。
 
-export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null };
+**要求**：
+- 当前选项可见
+- 选择后立即生效
+- 重启应用后保持
+- system 模式随系统变化
+- 使用 `fieldset` 和 `legend`，或带 label 的 select
+- 不使用不可访问的 div 模拟按钮
+- 不添加无实现的设置项
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
+### apps/desktop/src/pages/RouteErrorPage.tsx
 
-  render() {
-    if (this.state.hasError) {
-      return (
-        this.props.fallback ?? (
-          <div style={{ padding: 24, color: "red" }}>
-            <h2>发生错误</h2>
-            <pre>{this.state.error?.message}</pre>
-          </div>
-        )
-      );
-    }
-    return this.props.children;
-  }
-}
+必须使用 `useRouteError()` 和 `isRouteErrorResponse()`。
+
+处理：
+- Route Error Response
+- Error 实例
+- string
+- 任意未知值
+
+提供：
+- 返回首页
+- 重新加载应用
+
+不得仅依赖外层 Class ErrorBoundary 处理 Data Router 错误。
+
+### apps/desktop/src/pages/NotFoundPage.tsx
+
+至少包含：
+- "页面不存在"
+- 返回首页链接
+- 不抛异常
+- 不自动重定向
+- 不显示调试堆栈
+
+### apps/desktop/src/components/AppErrorBoundary.tsx
+
+普通 React Class Error Boundary，包裹：
+
+```tsx
+<QueryClientProvider>
+  <RouterProvider />
+</QueryClientProvider>
 ```
 
-### apps/desktop/src/stores/ui.ts
+职责：
+- 捕获 Provider 或 Router 初始化层渲染错误
+- `role="alert"`
+- 安全展示错误消息
+- 提供"重新加载应用"按钮
+- `componentDidCatch()` 只记录一次错误
+- 不显示生产 stack
+- 不吞掉错误后渲染空页面
 
-```typescript
-import { create } from "zustand";
+### apps/desktop/src/main.tsx
 
-interface UIState {
-  theme: "light" | "dark" | "system";
-  sidebarCollapsed: boolean;
-  setTheme: (theme: UIState["theme"]) => void;
-  toggleSidebar: () => void;
-}
-
-export const useUIStore = create<UIState>((set) => ({
-  theme: "system",
-  sidebarCollapsed: false,
-  setTheme: (theme) => set({ theme }),
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
-}));
-```
-
-### apps/desktop/src/main.tsx（更新）
+保留模块级 QueryClient：
 
 ```typescript
 import React from "react";
 import ReactDOM from "react-dom/client";
+import {
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { RouterProvider } from "react-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ErrorBoundary } from "./components/ErrorBoundary";
+
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { router } from "./router";
 import "./styles/global.css";
 
 const queryClient = new QueryClient();
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+ReactDOM.createRoot(
+  document.getElementById("root")!,
+).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
       </QueryClientProvider>
-    </ErrorBoundary>
+    </AppErrorBoundary>
   </React.StrictMode>,
 );
 ```
 
+**要求**：
+- 保留 StrictMode
+- QueryClient 只创建一次
+- 不在组件中创建 Router
+- 不在组件中创建 QueryClient
+- 全局 CSS 只导入一次
+- 不删除 QueryClientProvider
+
 ### apps/desktop/src/styles/global.css
 
+必须定义完整主题变量：
+
 ```css
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+:root,
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --border: #e0e0e0;
+  --interactive-hover: #f0f0f0;
+  --interactive-active: #e0e0e0;
+  --focus-ring: #0066cc;
+  --danger: #dc3545;
 }
 
-html, body, #root {
-  height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-.app-layout {
-  display: flex;
-  height: 100%;
-}
-
-.activity-bar {
-  width: 48px;
-  background: var(--bg-secondary, #f5f5f5);
-  border-right: 1px solid var(--border, #e0e0e0);
-}
-
-.main-content {
-  flex: 1;
-  overflow: auto;
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --text-primary: #e0e0e0;
+  --text-secondary: #999999;
+  --border: #404040;
+  --interactive-hover: #333333;
+  --interactive-active: #404040;
+  --focus-ring: #4d9fff;
+  --danger: #ff6b6b;
 }
 ```
+
+**要求**：
+- `html`、`body`、`#root` 高度为 100%
+- body 使用主题背景和文字颜色
+- AppLayout 不出现页面级水平滚动
+- MainContent 可独立滚动
+- NavLink 有 active 状态
+- 键盘 focus 可见
+- 侧栏折叠状态有明确布局变化
+- 错误页有可读布局
+- 不依赖变量 fallback 掩盖变量遗漏
+- 不使用内联 style 作为主要布局方案
+- 不引入 CSS-in-JS
 
 ### 验证命令
 
+从仓库根目录运行：
+
 ```powershell
-cd apps/desktop
-pnpm typecheck
-pnpm tauri dev
-# 访问 http://localhost:1420/settings 验证路由
+pnpm install
+pnpm --filter @devforge/desktop typecheck
+pnpm --filter @devforge/desktop build
+git diff --check
+git status --short
+pnpm dev:desktop
 ```
 
-**预期结果**：首页正常显示，`/settings` 路由可访问，ErrorBoundary 能捕获渲染错误。
+### 人工验证
+
+确认：
+1. 首页地址为 `#/`
+2. 设置页地址为 `#/settings`
+3. 点击导航能切换页面
+4. 设置页刷新仍正常
+5. 不存在路由显示 NotFoundPage
+6. 首页仍完整显示 AppInfo
+7. 加载状态仍存在
+8. IPC 错误仍有重试按钮
+9. Light 主题立即生效
+10. Dark 主题立即生效
+11. System 主题跟随当前系统
+12. System 模式下切换系统主题后页面实时变化
+13. 主题选择在应用重启后保持
+14. 侧栏折叠状态在应用重启后保持
+15. 导航 active 状态正确
+16. 键盘 Tab 可见 focus
+17. 临时在一个路由组件中抛出 Error 时显示 RouteErrorPage
+18. 删除临时错误代码后 `git diff` 中无测试残留
+19. AppErrorBoundary 提供重新加载按钮
+20. 控制台无 React、Router、Zustand、TanStack Query 或 Tauri 异常
+21. `apps/desktop/src/bindings.ts` 未修改
+22. 没有修改 Rust 文件
 
 ### 提交信息
 
 ```
-feat(frontend): 建立 Router、Theme、ErrorBoundary 基础设施
+feat(frontend): 建立 Hash Router、主题系统和双层错误边界
 ```
 
 ---
 
 ## Task 9：工程质量和 CI
 
-**依赖**：Task 2, Task 3, Task 8
+**依赖**：Task 2, Task 3, Task 7, Task 8
 
 **目标**：本地一条命令验证全部质量检查，GitHub Actions 基础 CI 可用。
 
@@ -2584,7 +2856,7 @@ Task 5 (React 展示)    Task 6 (SQLite migration)
    ↓                    ↓
    └─────── Task 7 ─────┘
             ↓
-      Task 8 (Router/Theme/ErrorBoundary)
+   Task 8 (Hash Router/Theme/ErrorBoundary)
             ↓
       Task 9 (CI + 质量检查)
             ↓
