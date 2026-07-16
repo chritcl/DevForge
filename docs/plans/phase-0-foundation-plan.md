@@ -1719,212 +1719,397 @@ feat(storage): 建立 SQLite 连接池和第一条 migration
 
 **依赖**：Task 4, Task 6
 
-**目标**：`get_app_info` 返回真实数据库状态。
+**目标**：在桌面 Composition Root 中创建数据目录，打开 SQLite 文件并执行 Migration，使用真实 SqliteDatabaseStatus 构造 AppState，使现有 get_app_info Command 返回 Ready 数据库状态。
 
-**架构决策**：
-- Tauri Command 仍通过 `GetAppInfo` Use Case 获取数据
-- `DatabaseStatusProvider` trait 改为异步，支持 SQLx 异步查询
-- Tauri State 持有 `GetAppInfo` 实例，不直接暴露 SqlitePool
+**范围约束**：Task 7 只负责已有模块之间的组合，不修改 Application 或 Storage 内部契约。
 
 ### 调用链
 
 ```text
-Tauri get_app_info Command（async）
+React useAppInfo
         ↓
-GetAppInfo.execute().await
+现有 commands.getAppInfo()
         ↓
-AppMetadataProvider + DatabaseStatusProvider（async）
+现有 Tauri get_app_info(AppHandle) -> AppInfo
         ↓
-PlatformMetadata    + SqlitePool 查询 _sqlx_migrations
+AppHandle.state::<AppState>()
         ↓
-AppInfo（组合后的最终 DTO）
+AppState.app_info()
+        ↓
+GetAppInfo<PlatformMetadata, SqliteDatabaseStatus>
+        ↓
+_sqlx_migrations
+        ↓
+DbStatus::Ready { migration_version: 1 }
 ```
 
-### 精确文件修改
+### 精确文件
 
-| 文件 | 变更 |
+Task 7 只允许修改：
+
+| 文件 | 职责 |
 |------|------|
-| `crates/devforge-application/src/ports.rs` | DatabaseStatusProvider 改为 async trait |
-| `crates/devforge-application/src/get_app_info.rs` | execute 改为 async |
-| `crates/devforge-storage/src/status.rs` | 实现 async DatabaseStatusProvider |
-| `apps/desktop/src-tauri/Cargo.toml` | 添加依赖 |
-| `apps/desktop/src-tauri/src/state.rs` | 使用 GetAppInfo + 真实 DbStatus |
-| `apps/desktop/src-tauri/src/commands.rs` | async command |
-| `apps/desktop/src-tauri/src/lib.rs` | async 初始化 |
+| `Cargo.lock` | cargo 更新 |
+| `apps/desktop/src-tauri/Cargo.toml` | 添加 devforge-storage 依赖 |
+| `apps/desktop/src-tauri/src/state.rs` | 使用真实 SqliteDatabaseStatus 构造 AppState |
+| `apps/desktop/src-tauri/src/lib.rs` | 组合初始化：创建目录、打开数据库、执行 Migration |
 
-### crates/devforge-application/Cargo.toml（补充依赖）
+**不得修改**：
 
-```toml
-[dependencies]
-async-trait = { workspace = true }
-```
+- `apps/desktop/src/bindings.ts`
+- `apps/desktop/src/**`（除 bindings.ts 外的前端文件）
+- `crates/devforge-application/**`
+- `crates/devforge-storage/**`
+- `crates/devforge-platform/**`
 
-### crates/devforge-application/src/ports.rs（已在 Task 2 中定义）
+**原因**：
+- Application Trait 已经是 async
+- GetAppInfo 已经是 async
+- SqliteDatabaseStatus 已经实现
+- Command 已经使用 AppHandle 并直接返回 AppInfo
+- main 已经正确返回 anyhow::Result
+- Task 7 不改变 IPC 类型契约
 
-无需修改，Task 2 已定义 async trait。
+### Cargo 依赖
 
-### crates/devforge-application/src/get_app_info.rs（已在 Task 2 中定义）
-
-无需修改，Task 2 已定义 async execute。
-
-### crates/devforge-storage/src/status.rs（已在 Task 6 中定义）
-
-无需修改，Task 6 已实现 `SqliteDatabaseStatus`。
-
-### apps/desktop/src-tauri/Cargo.toml（补充依赖）
+在 `apps/desktop/src-tauri/Cargo.toml` 的现有 `[dependencies]` 中只增加：
 
 ```toml
-[dependencies]
-devforge-application = { workspace = true }
-devforge-platform = { workspace = true }
 devforge-storage = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 ```
 
-### apps/desktop/src-tauri/src/state.rs（更新）
+为聚焦测试增加：
+
+```toml
+[dev-dependencies]
+tempfile = { workspace = true }
+```
+
+**要求**：
+- 不增加生产依赖 `tokio`
+- 不使用 `#[tokio::main]`
+- 不创建重复的 `[dependencies]`
+- 保留现有 `anyhow`、`dirs`、Specta 和 Tauri 依赖
+- `Cargo.lock` 根据依赖关系正常更新
+
+### AppState 设计
+
+更新 `apps/desktop/src-tauri/src/state.rs`：
 
 ```rust
-use std::path::PathBuf;
+use devforge_application::app_info::AppInfo;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformMetadata;
-use devforge_storage::pool::Database;
 use devforge_storage::status::SqliteDatabaseStatus;
 
-/// 应用全局状态
+/// 应用全局状态。
 ///
-/// 持有 Application Use Case，Tauri Command 通过此状态调用业务逻辑。
-pub struct AppState {
-    pub get_app_info: GetAppInfo<PlatformMetadata, SqliteDatabaseStatus>,
-    pub data_dir: PathBuf,
+/// 只暴露应用用例级接口，不向 Command 暴露 SqlitePool。
+pub(crate) struct AppState {
+    get_app_info: GetAppInfo<PlatformMetadata, SqliteDatabaseStatus>,
 }
 
 impl AppState {
-    pub fn new(data_dir: PathBuf) -> Self {
-        let platform_metadata = PlatformMetadata::new(data_dir.clone());
-        let db_status = SqliteDatabaseStatus::new(None);
+    pub(crate) fn new(
+        platform_metadata: PlatformMetadata,
+        database_status: SqliteDatabaseStatus,
+    ) -> Self {
         Self {
-            get_app_info: GetAppInfo::new(platform_metadata, db_status),
-            data_dir,
+            get_app_info: GetAppInfo::new(platform_metadata, database_status),
         }
     }
 
-    /// 初始化数据库（运行迁移）
-    ///
-    /// 初始化完成后，替换 DatabaseStatusProvider 为持有真实 SqlitePool 的版本。
-    pub async fn init_db(&mut self) -> Result<(), String> {
-        std::fs::create_dir_all(&self.data_dir)
-            .map_err(|e| format!("创建数据目录失败: {e}"))?;
-
-        let db_path = self.data_dir.join("devforge.db");
-        let db = Database::open(&db_path).await
-            .map_err(|e| format!("打开数据库失败: {e}"))?;
-
-        devforge_storage::migrator::run_migrations(db.pool()).await
-            .map_err(|e| format!("运行迁移失败: {e}"))?;
-
-        // 用持有真实 Pool 的版本替换
-        let platform_metadata = PlatformMetadata::new(self.data_dir.clone());
-        let db_status = SqliteDatabaseStatus::new(Some(db.pool().clone()));
-        self.get_app_info = GetAppInfo::new(platform_metadata, db_status);
-
-        Ok(())
+    pub(crate) async fn app_info(&self) -> AppInfo {
+        self.get_app_info.execute().await
     }
 }
 ```
 
-### apps/desktop/src-tauri/src/commands.rs（更新）
+**要求**：
+- 字段保持私有
+- 不公开 `SqlitePool`
+- 不保存公开的 `data_dir`
+- 不使用 `Option<SqlitePool>`
+- 不使用 `NotInitializedDbStatus`
+- 不提供 `init_db(&mut self)`
+- 不在初始化后替换 Use Case
+- 构造完成的 AppState 必须始终是有效状态
+- 使用尽可能窄的可见性
+
+### Composition Root 初始化
+
+更新 `apps/desktop/src-tauri/src/lib.rs`：
+
+保留：
+- `#![forbid(unsafe_code)]`
+- 现有 `create_builder()`
+- 现有 `export_bindings()`
+- 基于 `CARGO_MANIFEST_DIR` 的 bindings 输出
+- `anyhow::Result`
+- Specta Builder 运行时和导出共用
+
+新增私有异步初始化函数，职责仅为组合已有模块：
 
 ```rust
-use tauri::State;
-use devforge_application::app_info::AppInfo;
-use crate::state::AppState;
+async fn initialize_app_state(
+    version: String,
+    data_dir: std::path::PathBuf,
+) -> anyhow::Result<AppState> {
+    let db_path = data_dir.join("devforge.db");
 
-/// 获取应用信息
-///
-/// 通过 Application Use Case 获取，不在 Command 中构造业务逻辑。
-#[specta::specta]
-#[tauri::command]
-pub async fn get_app_info(state: State<'_, AppState>) -> AppInfo {
-    state.get_app_info.execute().await
+    let database = devforge_storage::pool::Database::open(&db_path)
+        .await
+        .with_context(|| {
+            format!("无法打开 SQLite 数据库：{}", db_path.display())
+        })?;
+
+    devforge_storage::migrator::run_migrations(database.pool())
+        .await
+        .context("无法执行 SQLite migration")?;
+
+    let platform_metadata =
+        devforge_platform::app_info::PlatformMetadata::new(
+            version,
+            data_dir,
+        );
+
+    let database_status =
+        devforge_storage::status::SqliteDatabaseStatus::new(
+            database.pool().clone(),
+        );
+
+    Ok(AppState::new(
+        platform_metadata,
+        database_status,
+    ))
 }
 ```
 
-### apps/desktop/src-tauri/src/lib.rs（更新）
+**说明**：
+- `Database` 包装器在函数结束时可以被释放
+- `SqliteDatabaseStatus` 持有克隆的 `SqlitePool`
+- 不向 AppState 或 Command 暴露 Pool
+- Migration 失败属于核心启动失败，必须阻止应用启动
+- 不把错误转换为 String
+- 允许根据 rustfmt 调整排版，但不得改变边界
+
+### 同步文件系统操作位置
+
+`std::fs::create_dir_all()` 必须在进入异步数据库初始化之前执行，避免在 Tokio worker 上执行同步文件系统操作。
+
+`run()` 采用：
 
 ```rust
-mod commands;
-mod state;
-
-use specta_typescript::Typescript;
-use tauri_specta::{collect_commands, Builder};
-use state::AppState;
-
-/// 创建 specta Builder（绑定生成和 run 共用同一个 Builder）
-fn create_builder() -> Builder<tauri::Wry> {
-    Builder::new()
-        .commands(collect_commands![commands::get_app_info,])
-}
-
-/// 导出 specta 生成的 TypeScript 绑定
-pub fn export_bindings() {
-    let builder = create_builder();
-    builder
-        .export(Typescript::default(), "../src/bindings.ts")
-        .expect("导出 TypeScript 绑定失败");
-}
-
-/// 初始化应用状态（异步，需要 tokio runtime）
-///
-/// 使用 dirs::data_local_dir()（%LOCALAPPDATA%\DevForge）作为数据目录。
-pub async fn init() -> Result<AppState, String> {
+pub fn run() -> anyhow::Result<()> {
     let data_dir = dirs::data_local_dir()
-        .expect("无法获取数据目录")
+        .context("无法解析本地数据目录")?
         .join("DevForge");
 
-    let mut app_state = AppState::new(data_dir);
-    app_state.init_db().await?;
-    Ok(app_state)
-}
+    std::fs::create_dir_all(&data_dir)
+        .with_context(|| {
+            format!("无法创建本地数据目录：{}", data_dir.display())
+        })?;
 
-/// 启动 Tauri 应用（同步，阻塞直到退出）
-pub fn run(app_state: AppState) {
+    let app_version = env!("CARGO_PKG_VERSION").to_owned();
+
+    let app_state = tauri::async_runtime::block_on(
+        initialize_app_state(app_version, data_dir),
+    )
+    .context("无法初始化桌面应用状态")?;
+
     let builder = create_builder();
 
     tauri::Builder::default()
         .manage(app_state)
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
-        .expect("启动 Tauri 应用失败");
+        .context("无法启动 Tauri 应用")?;
+
+    Ok(())
 }
 ```
 
-### apps/desktop/src-tauri/src/main.rs（更新）
+**要求**：
+- 保持 `run()` 同步
+- 使用 Tauri 自己的 `tauri::async_runtime::block_on()`
+- 不使用 `#[tokio::main]`
+- 不调用 `tauri::async_runtime::set()`
+- 不创建第二个 Tokio Runtime
+- 不在 `setup` 回调中进行两阶段 State 替换
+- AppState 必须在 `.manage(app_state)` 前完整初始化
+
+更新 `run()` Rustdoc 的 `# Errors`，明确包括：
+- 无法解析数据目录
+- 无法创建数据目录
+- 数据库无法打开
+- Migration 失败
+- Tauri 应用无法启动
+
+### Command 保持不变
+
+`apps/desktop/src-tauri/src/commands.rs` 不修改。
+
+必须继续保持：
 
 ```rust
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-#[tokio::main]
-async fn main() {
-    match devforge_desktop_lib::init().await {
-        Ok(app_state) => devforge_desktop_lib::run(app_state),
-        Err(e) => {
-            eprintln!("应用初始化失败: {e}");
-            std::process::exit(1);
-        }
-    }
+#[tauri::command]
+#[specta::specta]
+pub async fn get_app_info(app: AppHandle) -> AppInfo {
+    app.state::<AppState>().app_info().await
 }
 ```
+
+不得改为：
+- `State<'_, AppState>`
+- `Result<AppInfo, String>`
+- 不得重新生成 `typedError`
+
+### main.rs 保持不变
+
+`apps/desktop/src-tauri/src/main.rs` 不修改：
+
+```rust
+#![forbid(unsafe_code)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+fn main() -> anyhow::Result<()> {
+    devforge_desktop_lib::run()
+}
+```
+
+不得添加：
+- `#[tokio::main]`
+- `async fn main()`
+
+### 聚焦测试
+
+在 `state.rs` 的 `#[cfg(test)]` 模块中增加真实 Storage 串联测试。
+
+测试使用：
+- tempfile 临时目录
+- Database::open()
+- run_migrations()
+- PlatformMetadata
+- SqliteDatabaseStatus
+- AppState
+
+测试流程：
+
+```text
+创建临时文件数据库
+→ 执行 Migration
+→ 构造真实 SqliteDatabaseStatus
+→ 构造 AppState
+→ 调用 app_info()
+→ 验证版本、数据目录和 Ready v1
+→ drop AppState
+→ 显式关闭 Pool
+→ 最终断言
+```
+
+使用 `tauri::async_runtime::block_on()`，不得添加 Tokio 测试 Runtime。
+
+测试至少验证：
+
+```rust
+info.version == "test-version"
+info.data_dir == 注入的临时目录
+matches!(
+    info.db_status,
+    DbStatus::Ready {
+        migration_version: 1
+    }
+)
+```
+
+**资源清理要求**：
+1. 保存独立的 `SqlitePool` clone
+2. 构造 AppState
+3. 获取 AppInfo
+4. `drop(state)`
+5. `drop(database)`
+6. 调用 `tauri::async_runtime::block_on(pool.close());`
+7. 最后执行断言
+
+**测试约束**：
+- 不得使用真实用户数据目录
+- 不得使用普通 `:memory:` 数据库
+- 不得使用 `unwrap()` 或 `expect()`
+- 不得直接 `panic!()`
+- 不得为测试修改 Application DTO derive
+- 不得导出测试辅助代码
+
+### Bindings 契约
+
+Task 7 不改变：
+- Tauri Command 名称
+- Command 参数
+- Command 返回类型
+- AppInfo
+- DbStatus
+
+因此重新生成 bindings 后，`apps/desktop/src/bindings.ts` 必须保持无差异。
+
+仍应是：
+
+```typescript
+getAppInfo: () =>
+  __TAURI_INVOKE<AppInfo>("get_app_info")
+```
+
+不得出现 `typedError`。
+
+`export_bindings()` 不得打开数据库、创建数据目录或运行 Migration。
 
 ### 验证命令
 
+从仓库根目录执行：
+
 ```powershell
+cargo test -p devforge-desktop
 cargo test --workspace
-cd apps/desktop
-pnpm typecheck
-pnpm tauri dev
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo check --workspace
+pnpm bindings:generate
+git diff --exit-code -- apps/desktop/src/bindings.ts
+pnpm --filter @devforge/desktop typecheck
+pnpm --filter @devforge/desktop build
+git diff --check
+git status --short
+pnpm dev:desktop
 ```
 
-**预期结果**：窗口显示数据库状态为 "就绪 (migration v1)"。数据目录下生成 `devforge.db` 和 `devforge.db-wal`。
+### 人工验证
+
+确认：
+1. 桌面窗口正常打开
+2. 页面显示 `DevForge`
+3. 版本显示 `0.1.0`
+4. 数据目录以 `DevForge` 结尾
+5. 数据库状态显示 `就绪（migration v1）`
+6. 数据目录中存在 `devforge.db`
+7. 不要求 `devforge.db-wal` 必然存在
+8. 关闭并重新启动应用后仍显示 Ready v1
+9. 控制台没有 React、TanStack Query、Tauri 或 IPC 异常
+10. `commands.getAppInfo()` 仍直接返回 AppInfo
+11. bindings 中没有 `typedError`
+12. Ctrl+C 后 Tauri 和 Vite 进程正常退出
+
+### 范围限制
+
+不得：
+- 修改 Application crate
+- 修改 Storage crate
+- 修改 Platform crate
+- 修改 Command
+- 修改 main.rs
+- 修改 React
+- 手动修改 bindings
+- 添加 Router、Theme 或 ErrorBoundary
+- 执行 Task 8
+- 添加无关抽象
+- 提交或 push
 
 ### 提交信息
 
