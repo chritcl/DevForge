@@ -8,7 +8,8 @@
     "dev:desktop": "pnpm --filter @devforge/desktop tauri dev",
     "dev:web": "pnpm --filter @devforge/desktop dev",
     "build:desktop": "pnpm --filter @devforge/desktop build",
-    "bindings:generate": "cargo run -p devforge-desktop --bin export_bindings"
+    "bindings:generate": "cargo run -p devforge-desktop --bin export_bindings",
+    "check": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1"
   },
   "engines": {
     "node": ">=22.12.0",
