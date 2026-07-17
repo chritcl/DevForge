@@ -28,7 +28,7 @@ impl std::fmt::Display for WorkspaceId {
 }
 
 /// 工作区状态
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum WorkspaceStatus {
     /// 活跃状态
     Active,

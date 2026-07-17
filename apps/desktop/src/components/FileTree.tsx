@@ -12,11 +12,45 @@ interface FileTreeProps {
 export function FileTree({
   sourceId,
   sourceName,
-  sourceRoot,
   onFileSelect,
 }: FileTreeProps) {
   const [expanded, setExpanded] = useState(false);
-  const { data: documents, isLoading, error } = useDocuments(sourceId);
+
+  return (
+    <div className="file-tree">
+      <div
+        className="file-tree-header"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="file-tree-icon">{expanded ? "📂" : "📁"}</span>
+        <span className="file-tree-name">{sourceName}</span>
+      </div>
+
+      {expanded && (
+        <div className="file-tree-content">
+          <FileTreeDirectory
+            sourceId={sourceId}
+            parentPath={null}
+            onFileSelect={onFileSelect}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface FileTreeDirectoryProps {
+  sourceId: string;
+  parentPath: string | null;
+  onFileSelect: (doc: DocumentDto) => void;
+}
+
+function FileTreeDirectory({
+  sourceId,
+  parentPath,
+  onFileSelect,
+}: FileTreeDirectoryProps) {
+  const { data: items, isLoading, error } = useDocuments(sourceId, parentPath ?? undefined);
 
   if (isLoading) {
     return (
@@ -34,108 +68,51 @@ export function FileTree({
     );
   }
 
-  const docs = documents ?? [];
+  if (!items || items.length === 0) {
+    return (
+      <div className="file-tree-empty">暂无文件</div>
+    );
+  }
 
-  // 按目录分组
-  const rootDocs = docs.filter(
-    (d) => !d.relative_path.includes("/") && !d.relative_path.includes("\\")
+  // 分离目录和文件
+  // 目录条目的特征：kind 为 "unknown" 且 content_readable 为 false 且 size 为 0
+  const dirs = items.filter(
+    (item) => item.kind === "unknown" && !item.content_readable && item.size === 0
   );
-  const dirDocs = docs.filter(
-    (d) => d.relative_path.includes("/") || d.relative_path.includes("\\")
+  const files = items.filter(
+    (item) => !(item.kind === "unknown" && !item.content_readable && item.size === 0)
   );
-
-  // 提取唯一的目录
-  const dirs = [
-    ...new Set(
-      dirDocs.map((d) => {
-        const parts = d.relative_path.split(/[/\\]/);
-        return parts[0];
-      })
-    ),
-  ];
 
   return (
-    <div className="file-tree">
-      <div
-        className="file-tree-header"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="file-tree-icon">{expanded ? "📂" : "📁"}</span>
-        <span className="file-tree-name">{sourceName}</span>
-      </div>
-
-      {expanded && (
-        <div className="file-tree-content">
-          {/* 目录 */}
-          {dirs.map((dir) => (
-            <FileTreeDir
-              key={dir}
-              name={dir}
-              sourceId={sourceId}
-              sourceRoot={sourceRoot}
-              parentPath={dir}
-              documents={dirDocs}
-              onFileSelect={onFileSelect}
-            />
-          ))}
-
-          {/* 根目录文件 */}
-          {rootDocs.map((doc) => (
-            <FileTreeFile
-              key={doc.id}
-              doc={doc}
-              onClick={() => onFileSelect(doc)}
-            />
-          ))}
-
-          {docs.length === 0 && (
-            <div className="file-tree-empty">暂无文件</div>
-          )}
-        </div>
-      )}
-    </div>
+    <>
+      {dirs.map((dir) => (
+        <FileTreeDirItem
+          key={dir.id}
+          dir={dir}
+          sourceId={sourceId}
+          onFileSelect={onFileSelect}
+        />
+      ))}
+      {files.map((file) => (
+        <FileTreeFileItem
+          key={file.id}
+          doc={file}
+          onFileSelect={onFileSelect}
+        />
+      ))}
+    </>
   );
 }
 
-interface FileTreeDirProps {
-  name: string;
+interface FileTreeDirItemProps {
+  dir: DocumentDto;
   sourceId: string;
-  sourceRoot: string;
-  parentPath: string;
-  documents: DocumentDto[];
   onFileSelect: (doc: DocumentDto) => void;
 }
 
-function FileTreeDir({
-  name,
-  sourceId,
-  sourceRoot,
-  parentPath,
-  documents,
-  onFileSelect,
-}: FileTreeDirProps) {
+function FileTreeDirItem({ dir, sourceId, onFileSelect }: FileTreeDirItemProps) {
   const [expanded, setExpanded] = useState(false);
-
-  // 获取当前目录下的文件
-  const dirFiles = documents.filter((d) => {
-    const parts = d.relative_path.split(/[/\\]/);
-    return parts[0] === name && parts.length === 2;
-  });
-
-  // 获取子目录
-  const subDirs = [
-    ...new Set(
-      documents
-        .filter((d) => {
-          const parts = d.relative_path.split(/[/\\]/);
-          return parts[0] === name && parts.length > 2;
-        })
-        .map((d) => {
-          const parts = d.relative_path.split(/[/\\]/);
-          return parts[1];
-        })
-    ),
-  ];
+  const dirName = dir.relative_path.split(/[/\\]/).pop() ?? dir.relative_path;
 
   return (
     <div className="file-tree-dir">
@@ -144,47 +121,28 @@ function FileTreeDir({
         onClick={() => setExpanded(!expanded)}
       >
         <span className="file-tree-icon">{expanded ? "📂" : "📁"}</span>
-        <span className="file-tree-name">{name}</span>
+        <span className="file-tree-name">{dirName}</span>
       </div>
 
       {expanded && (
         <div className="file-tree-dir-content">
-          {/* 子目录 */}
-          {subDirs.map((subDir) => (
-            <FileTreeDir
-              key={subDir}
-              name={subDir}
-              sourceId={sourceId}
-              sourceRoot={sourceRoot}
-              parentPath={`${parentPath}/${subDir}`}
-              documents={documents.filter((d) => {
-                const parts = d.relative_path.split(/[/\\]/);
-                return parts[0] === name && parts.length > 2;
-              })}
-              onFileSelect={onFileSelect}
-            />
-          ))}
-
-          {/* 文件 */}
-          {dirFiles.map((doc) => (
-            <FileTreeFile
-              key={doc.id}
-              doc={doc}
-              onClick={() => onFileSelect(doc)}
-            />
-          ))}
+          <FileTreeDirectory
+            sourceId={sourceId}
+            parentPath={dir.relative_path}
+            onFileSelect={onFileSelect}
+          />
         </div>
       )}
     </div>
   );
 }
 
-interface FileTreeFileProps {
+interface FileTreeFileItemProps {
   doc: DocumentDto;
-  onClick: () => void;
+  onFileSelect: (doc: DocumentDto) => void;
 }
 
-function FileTreeFile({ doc, onClick }: FileTreeFileProps) {
+function FileTreeFileItem({ doc, onFileSelect }: FileTreeFileItemProps) {
   const fileName =
     doc.relative_path.split(/[/\\]/).pop() ?? doc.relative_path;
 
@@ -208,7 +166,7 @@ function FileTreeFile({ doc, onClick }: FileTreeFileProps) {
   return (
     <div
       className={`file-tree-file ${isSensitive ? "file-tree-file-sensitive" : ""}`}
-      onClick={onClick}
+      onClick={() => onFileSelect(doc)}
     >
       <span className="file-tree-icon">{getFileIcon(doc.kind)}</span>
       <span className="file-tree-name">{fileName}</span>

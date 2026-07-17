@@ -22,7 +22,7 @@ pub trait TabRepository: Send + Sync {
 }
 
 /// 标签页 DTO
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct TabDto {
     pub id: String,
     pub workspace_id: String,
@@ -46,7 +46,7 @@ impl From<&OpenTabEntity> for TabDto {
 }
 
 /// 标签页错误
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error, serde::Serialize, specta::Type)]
 pub enum TabError {
     #[error("标签页不存在")]
     TabNotFound,
@@ -90,18 +90,15 @@ impl OpenTab {
 
         // 创建新标签
         let position = existing_tabs.len() as i32;
-        let mut tab = OpenTabEntity::new(workspace_id, document_id, position);
-        tab.set_active(true);
+        let mut tab = OpenTabEntity::new(workspace_id.clone(), document_id, position);
 
         self.tab_repo.create(&tab).await?;
 
-        // 将其他标签设为非活动
-        for existing in &existing_tabs {
-            if existing.is_active {
-                // 需要更新，但我们的 trait 没有 update 方法
-                // 简单起见，先删除再创建
-            }
-        }
+        // 设置新标签为活动标签（会自动将其他标签设为非活动）
+        self.tab_repo.set_active(&workspace_id, &tab.id).await?;
+
+        // 更新本地标签状态
+        tab.set_active(true);
 
         Ok(TabDto::from(&tab))
     }

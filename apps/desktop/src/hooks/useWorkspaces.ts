@@ -64,3 +64,13 @@ export function useArchiveWorkspace() {
     },
   });
 }
+
+export function useMarkWorkspaceOpened() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => invoke<void>("mark_workspace_opened", { id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+    },
+  });
+}

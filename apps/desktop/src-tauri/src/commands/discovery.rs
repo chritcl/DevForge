@@ -10,6 +10,7 @@ use crate::state::AppState;
 
 /// 扫描数据源
 #[tauri::command]
+#[specta::specta]
 pub async fn scan_source(
     state: State<'_, AppState>,
     source_id: String,

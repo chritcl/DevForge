@@ -32,7 +32,7 @@ impl std::fmt::Display for SourceId {
 }
 
 /// 数据源类型
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum SourceKind {
     /// Git 仓库
     Git,

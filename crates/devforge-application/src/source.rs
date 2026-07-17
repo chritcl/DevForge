@@ -5,8 +5,32 @@ use std::sync::Arc;
 
 use devforge_domain::error::DomainError;
 use devforge_domain::path_guard::PathError;
-use devforge_domain::source::{Source, SourceId};
+use devforge_domain::source::{Source, SourceId, SourceKind};
 use devforge_domain::workspace::WorkspaceId;
+
+/// 数据源 DTO（用于 IPC 传输）
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct SourceDto {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub root_path: String,
+    pub kind: SourceKind,
+    pub created_at: String,
+}
+
+impl From<&Source> for SourceDto {
+    fn from(source: &Source) -> Self {
+        Self {
+            id: source.id.0.clone(),
+            workspace_id: source.workspace_id.0.clone(),
+            name: source.name.clone(),
+            root_path: source.root_path.to_string_lossy().to_string(),
+            kind: source.kind.clone(),
+            created_at: source.created_at.to_rfc3339(),
+        }
+    }
+}
 
 /// Source Repository Trait（应用层端口）
 #[async_trait::async_trait]
@@ -21,7 +45,7 @@ pub trait SourceRepository: Send + Sync {
 }
 
 /// 应用层错误
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error, serde::Serialize, specta::Type)]
 pub enum SourceError {
     #[error("路径错误: {0}")]
     Path(String),
@@ -67,7 +91,7 @@ impl AddGitSource {
         &self,
         workspace_id: String,
         path: PathBuf,
-    ) -> Result<Source, SourceError> {
+    ) -> Result<SourceDto, SourceError> {
         let workspace_id = WorkspaceId(workspace_id);
 
         // 验证路径存在且是目录
@@ -100,7 +124,7 @@ impl AddGitSource {
 
         let source = Source::new_git(workspace_id, name, path);
         self.source_repo.create(&source).await?;
-        Ok(source)
+        Ok(SourceDto::from(&source))
     }
 }
 
@@ -118,7 +142,7 @@ impl AddDirectorySource {
         &self,
         workspace_id: String,
         path: PathBuf,
-    ) -> Result<Source, SourceError> {
+    ) -> Result<SourceDto, SourceError> {
         let workspace_id = WorkspaceId(workspace_id);
 
         // 验证路径存在且是目录
@@ -145,7 +169,7 @@ impl AddDirectorySource {
 
         let source = Source::new_directory(workspace_id, name, path);
         self.source_repo.create(&source).await?;
-        Ok(source)
+        Ok(SourceDto::from(&source))
     }
 }
 
@@ -159,9 +183,10 @@ impl ListSources {
         Self { source_repo }
     }
 
-    pub async fn execute(&self, workspace_id: String) -> Result<Vec<Source>, SourceError> {
+    pub async fn execute(&self, workspace_id: String) -> Result<Vec<SourceDto>, SourceError> {
         let workspace_id = WorkspaceId(workspace_id);
-        Ok(self.source_repo.list_by_workspace(&workspace_id).await?)
+        let sources = self.source_repo.list_by_workspace(&workspace_id).await?;
+        Ok(sources.iter().map(SourceDto::from).collect())
     }
 }
 
@@ -353,7 +378,7 @@ mod tests {
             .await
             .unwrap();
 
-        remove.execute(source.id.0.clone()).await.unwrap();
+        remove.execute(source.id.clone()).await.unwrap();
 
         let sources = list.execute("workspace-1".to_owned()).await.unwrap();
         assert_eq!(sources.len(), 0);

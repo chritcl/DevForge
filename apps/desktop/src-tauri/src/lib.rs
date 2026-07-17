@@ -13,7 +13,28 @@ use state::AppState;
 
 /// 创建 specta Builder（绑定生成和 run 共用同一个 Builder）
 fn create_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new().commands(collect_commands![commands::get_app_info,])
+    Builder::<tauri::Wry>::new().commands(collect_commands![
+        commands::get_app_info,
+        commands::create_workspace,
+        commands::get_workspace,
+        commands::list_workspaces,
+        commands::update_workspace,
+        commands::archive_workspace,
+        commands::restore_workspace,
+        commands::delete_workspace,
+        commands::mark_workspace_opened,
+        commands::add_git_source,
+        commands::add_directory_source,
+        commands::list_sources,
+        commands::remove_source,
+        commands::scan_source,
+        commands::list_documents,
+        commands::read_document_content,
+        commands::open_tab,
+        commands::close_tab,
+        commands::list_tabs,
+        commands::set_active_tab,
+    ])
 }
 
 /// 导出 specta 生成的 TypeScript 绑定
@@ -116,28 +137,9 @@ pub fn run() -> anyhow::Result<()> {
     let builder = create_builder();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(builder.invoke_handler())
-        .invoke_handler(tauri::generate_handler![
-            commands::create_workspace,
-            commands::get_workspace,
-            commands::list_workspaces,
-            commands::update_workspace,
-            commands::archive_workspace,
-            commands::restore_workspace,
-            commands::delete_workspace,
-            commands::add_git_source,
-            commands::add_directory_source,
-            commands::list_sources,
-            commands::remove_source,
-            commands::scan_source,
-            commands::list_documents,
-            commands::read_document_content,
-            commands::open_tab,
-            commands::close_tab,
-            commands::list_tabs,
-            commands::set_active_tab,
-        ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;
 

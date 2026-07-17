@@ -12,6 +12,7 @@ use crate::state::AppState;
 
 /// 列出文档
 #[tauri::command]
+#[specta::specta]
 pub async fn list_documents(
     state: State<'_, AppState>,
     source_id: String,
@@ -23,6 +24,7 @@ pub async fn list_documents(
 
 /// 读取文档内容
 #[tauri::command]
+#[specta::specta]
 pub async fn read_document_content(
     state: State<'_, AppState>,
     document_id: String,
