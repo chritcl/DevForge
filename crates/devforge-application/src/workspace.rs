@@ -223,6 +223,30 @@ impl DeleteWorkspace {
     }
 }
 
+/// 标记工作区已打开用例
+pub struct MarkWorkspaceOpened {
+    repo: Arc<dyn WorkspaceRepository>,
+}
+
+impl MarkWorkspaceOpened {
+    pub fn new(repo: Arc<dyn WorkspaceRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self, id: String) -> Result<(), AppError> {
+        let workspace_id = WorkspaceId(id);
+        let mut workspace = self
+            .repo
+            .get(&workspace_id)
+            .await?
+            .ok_or(AppError::WorkspaceNotFound)?;
+
+        workspace.mark_opened();
+        self.repo.update(&workspace).await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

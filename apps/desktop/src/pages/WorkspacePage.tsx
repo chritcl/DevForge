@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useParams } from "react-router";
-import { useWorkspace } from "../hooks/useWorkspaces";
+import { useWorkspace, useMarkWorkspaceOpened } from "../hooks/useWorkspaces";
 import { useSources } from "../hooks/useSources";
 import { useTabs, useOpenTab, useCloseTab, useSetActiveTab } from "../hooks/useTabs";
 import { useDocuments } from "../hooks/useDocuments";
@@ -17,6 +17,7 @@ export function WorkspacePage() {
   const { data: workspace, isLoading, error } = useWorkspace(workspaceId);
   const { data: sources } = useSources(workspaceId);
   const { data: tabs } = useTabs(workspaceId);
+  const markOpened = useMarkWorkspaceOpened();
 
   const openTab = useOpenTab();
   const closeTab = useCloseTab();
@@ -24,6 +25,25 @@ export function WorkspacePage() {
 
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [showAddSource, setShowAddSource] = useState(false);
+
+  // 标记工作区已打开
+  useEffect(() => {
+    if (workspaceId) {
+      markOpened.mutate(workspaceId);
+    }
+  }, [workspaceId, markOpened]);
+
+  // 恢复活动标签（从已保存的标签中恢复）
+  useEffect(() => {
+    if (tabs && tabs.length > 0 && !activeTabId) {
+      const activeTab = tabs.find((t) => t.is_active);
+      if (activeTab) {
+        setActiveTabId(activeTab.id);
+      } else {
+        setActiveTabId(tabs[0].id);
+      }
+    }
+  }, [tabs, activeTabId]);
 
   // 收集所有需要查询文档的 source ID
   const sourceIds = useMemo(

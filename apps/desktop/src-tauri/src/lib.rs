@@ -22,6 +22,7 @@ fn create_builder() -> Builder<tauri::Wry> {
         commands::archive_workspace,
         commands::restore_workspace,
         commands::delete_workspace,
+        commands::mark_workspace_opened,
         commands::add_git_source,
         commands::add_directory_source,
         commands::list_sources,

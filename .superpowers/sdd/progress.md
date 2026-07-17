@@ -11,7 +11,7 @@
 | Task 5: Implement True Lazy-Load File Tree | 完成 | 待提交 | 待审查 |
 | Task 6: Complete Tab Bar and Tab Management | 完成 | 待提交 | 待审查 |
 | Task 7: Fix Tab Active Status + Transaction | 完成 | 待提交 | 待审查 |
-| Task 8: Implement Startup Restore | 待开始 | - | - |
+| Task 8: Implement Startup Restore | 完成 | 待提交 | 待审查 |
 | Task 9: End-to-End Verification | 待开始 | - | - |
 
 ## 关键问题
@@ -24,10 +24,10 @@
 - [x] Bug 3: Specta 绑定不完整
 - [x] Bug 4: 无添加数据源 UI
 - [x] Bug 5: 文件树非懒加载
-- [ ] Bug 6: 无启动恢复逻辑
+- [x] Bug 6: 无启动恢复逻辑
 - [x] Bug 7: 标签活跃状态切换为空操作
 - [x] Bug 8: 无标签栏
-- [ ] Bug 9: 不记录 last_opened_at
+- [x] Bug 9: 不记录 last_opened_at
 
 ### P2 - 测试和可维护性
 - [ ] Bug 10: 扫描无事务保护

@@ -4,7 +4,7 @@ use tauri::State;
 
 use devforge_application::workspace::{
     AppError, ArchiveWorkspace, CreateWorkspace, DeleteWorkspace, GetWorkspace, ListWorkspaces,
-    RestoreWorkspace, UpdateWorkspace, WorkspaceDto,
+    MarkWorkspaceOpened, RestoreWorkspace, UpdateWorkspace, WorkspaceDto,
 };
 
 use crate::state::AppState;
@@ -71,5 +71,13 @@ pub async fn restore_workspace(state: State<'_, AppState>, id: String) -> Result
 #[specta::specta]
 pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     let use_case = DeleteWorkspace::new(state.workspace_repo());
+    use_case.execute(id).await
+}
+
+/// 标记工作区已打开
+#[tauri::command]
+#[specta::specta]
+pub async fn mark_workspace_opened(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let use_case = MarkWorkspaceOpened::new(state.workspace_repo());
     use_case.execute(id).await
 }
