@@ -15,12 +15,17 @@ pub trait DocumentRepository: Send + Sync {
     async fn create(&self, document: &Document) -> Result<(), DomainError>;
     async fn get(&self, id: &DocumentId) -> Result<Option<Document>, DomainError>;
     async fn list_by_source(&self, source_id: &SourceId) -> Result<Vec<Document>, DomainError>;
+    async fn list_by_source_and_parent(
+        &self,
+        source_id: &SourceId,
+        parent_path: Option<&str>,
+    ) -> Result<Vec<Document>, DomainError>;
     async fn upsert(&self, document: &Document) -> Result<(), DomainError>;
     async fn delete_by_source(&self, source_id: &SourceId) -> Result<(), DomainError>;
 }
 
 /// 扫描结果
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct ScanResult {
     /// 新增文档数
     pub added: u32,
@@ -33,7 +38,7 @@ pub struct ScanResult {
 }
 
 /// 文件发现错误
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error, serde::Serialize, specta::Type)]
 pub enum DiscoveryError {
     #[error("数据源不存在")]
     SourceNotFound,
@@ -195,8 +200,11 @@ impl ScanSource {
             let modified_at = metadata
                 .modified()
                 .map(|t| {
+                    // 将 SystemTime 转换为 DateTime<Utc>
                     let duration = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-                    Utc::now() - chrono::Duration::from_std(duration).unwrap_or_default()
+                    let secs = duration.as_secs() as i64;
+                    let nanos = duration.subsec_nanos();
+                    chrono::DateTime::from_timestamp(secs, nanos).unwrap_or_else(Utc::now)
                 })
                 .unwrap_or_else(|_| Utc::now());
 
@@ -225,10 +233,12 @@ impl ScanSource {
             current_docs.iter().map(|(p, _)| p.clone()).collect();
 
         let mut removed = 0u32;
-        for path in existing_paths.keys() {
+        for (path, existing_doc) in existing_paths.iter() {
             if !current_paths.contains(path) {
-                // 文档已从文件系统删除，但我们保留记录
-                // 注意：不真正删除，只标记为不可读
+                // 文档已从文件系统删除，标记为不可读
+                let mut doc = (*existing_doc).clone();
+                doc.content_readable = false;
+                self.document_repo.upsert(&doc).await?;
                 removed += 1;
             }
         }
@@ -471,6 +481,60 @@ mod tests {
                     .filter(|d| d.source_id == *source_id)
                     .cloned()
                     .collect())
+            }
+
+            async fn list_by_source_and_parent(
+                &self,
+                source_id: &SourceId,
+                parent_path: Option<&str>,
+            ) -> Result<Vec<Document>, DomainError> {
+                let docs = self.docs.lock().unwrap();
+                let mut result = Vec::new();
+                let mut seen_dirs = std::collections::HashSet::new();
+
+                for doc in docs.values() {
+                    if doc.source_id != *source_id {
+                        continue;
+                    }
+
+                    let path_str = doc.relative_path.to_string_lossy().to_string();
+                    let path = std::path::PathBuf::from(&path_str);
+
+                    match parent_path {
+                        Some(parent) => {
+                            // 只返回直接子文件和子目录
+                            if let Some(parent_of) = path.parent() {
+                                if parent_of.to_string_lossy() == parent {
+                                    result.push(doc.clone());
+                                }
+                            }
+                        }
+                        None => {
+                            // 根目录：返回根目录下的文件和第一层目录
+                            let components: Vec<_> = path.components().collect();
+                            if components.len() == 1 {
+                                // 根目录下的文件
+                                result.push(doc.clone());
+                            } else if components.len() > 1 {
+                                // 子目录：只返回目录条目（使用第一个组件作为目录名）
+                                let dir_name = components[0].as_os_str().to_string_lossy().to_string();
+                                if !seen_dirs.contains(&dir_name) {
+                                    seen_dirs.insert(dir_name.clone());
+                                    // 创建一个虚拟的目录文档
+                                    let mut dir_doc = doc.clone();
+                                    dir_doc.relative_path = std::path::PathBuf::from(&dir_name);
+                                    dir_doc.kind = DocumentKind::Unknown;
+                                    dir_doc.size = 0;
+                                    dir_doc.content_readable = false;
+                                    result.push(dir_doc);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+                Ok(result)
             }
 
             async fn upsert(&self, document: &Document) -> Result<(), DomainError> {

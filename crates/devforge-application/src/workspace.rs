@@ -3,7 +3,33 @@
 use std::sync::Arc;
 
 use devforge_domain::error::DomainError;
-use devforge_domain::workspace::{Workspace, WorkspaceId};
+use devforge_domain::workspace::{Workspace, WorkspaceId, WorkspaceStatus};
+
+/// 工作区 DTO（用于 IPC 传输）
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct WorkspaceDto {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub status: WorkspaceStatus,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_opened_at: Option<String>,
+}
+
+impl From<&Workspace> for WorkspaceDto {
+    fn from(workspace: &Workspace) -> Self {
+        Self {
+            id: workspace.id.0.clone(),
+            name: workspace.name.clone(),
+            description: workspace.description.clone(),
+            status: workspace.status.clone(),
+            created_at: workspace.created_at.to_rfc3339(),
+            updated_at: workspace.updated_at.to_rfc3339(),
+            last_opened_at: workspace.last_opened_at.map(|t| t.to_rfc3339()),
+        }
+    }
+}
 
 /// 工作区 Repository Trait（应用层端口）
 #[async_trait::async_trait]
@@ -16,7 +42,7 @@ pub trait WorkspaceRepository: Send + Sync {
 }
 
 /// 应用层错误
-#[derive(Debug, thiserror::Error, serde::Serialize)]
+#[derive(Debug, thiserror::Error, serde::Serialize, specta::Type)]
 pub enum AppError {
     #[error("领域错误: {0}")]
     Domain(String),
@@ -46,10 +72,10 @@ impl CreateWorkspace {
         &self,
         name: String,
         description: Option<String>,
-    ) -> Result<Workspace, AppError> {
+    ) -> Result<WorkspaceDto, AppError> {
         let workspace = Workspace::new(name, description)?;
         self.repo.create(&workspace).await?;
-        Ok(workspace)
+        Ok(WorkspaceDto::from(&workspace))
     }
 }
 
@@ -63,12 +89,14 @@ impl GetWorkspace {
         Self { repo }
     }
 
-    pub async fn execute(&self, id: String) -> Result<Workspace, AppError> {
+    pub async fn execute(&self, id: String) -> Result<WorkspaceDto, AppError> {
         let workspace_id = WorkspaceId(id);
-        self.repo
+        let workspace = self
+            .repo
             .get(&workspace_id)
             .await?
-            .ok_or(AppError::WorkspaceNotFound)
+            .ok_or(AppError::WorkspaceNotFound)?;
+        Ok(WorkspaceDto::from(&workspace))
     }
 }
 
@@ -82,8 +110,9 @@ impl ListWorkspaces {
         Self { repo }
     }
 
-    pub async fn execute(&self) -> Result<Vec<Workspace>, AppError> {
-        Ok(self.repo.list().await?)
+    pub async fn execute(&self) -> Result<Vec<WorkspaceDto>, AppError> {
+        let workspaces = self.repo.list().await?;
+        Ok(workspaces.iter().map(WorkspaceDto::from).collect())
     }
 }
 
@@ -102,7 +131,7 @@ impl UpdateWorkspace {
         id: String,
         name: Option<String>,
         description: Option<Option<String>>,
-    ) -> Result<Workspace, AppError> {
+    ) -> Result<WorkspaceDto, AppError> {
         let workspace_id = WorkspaceId(id);
         let mut workspace = self
             .repo
@@ -119,7 +148,7 @@ impl UpdateWorkspace {
         }
 
         self.repo.update(&workspace).await?;
-        Ok(workspace)
+        Ok(WorkspaceDto::from(&workspace))
     }
 }
 
@@ -267,7 +296,7 @@ mod tests {
 
         let workspace = create.execute("测试".to_owned(), None).await.unwrap();
 
-        let fetched = get.execute(workspace.id.0.clone()).await.unwrap();
+        let fetched = get.execute(workspace.id.clone()).await.unwrap();
         assert_eq!(fetched.name, "测试");
     }
 
@@ -294,7 +323,7 @@ mod tests {
 
         let updated = update
             .execute(
-                workspace.id.0.clone(),
+                workspace.id.clone(),
                 Some("新名称".to_owned()),
                 Some(Some("新描述".to_owned())),
             )
@@ -315,15 +344,15 @@ mod tests {
 
         let workspace = create.execute("测试".to_owned(), None).await.unwrap();
 
-        archive.execute(workspace.id.0.clone()).await.unwrap();
-        let archived = get.execute(workspace.id.0.clone()).await.unwrap();
+        archive.execute(workspace.id.clone()).await.unwrap();
+        let archived = get.execute(workspace.id.clone()).await.unwrap();
         assert_eq!(
             archived.status,
             devforge_domain::workspace::WorkspaceStatus::Archived
         );
 
-        restore.execute(workspace.id.0.clone()).await.unwrap();
-        let restored = get.execute(workspace.id.0.clone()).await.unwrap();
+        restore.execute(workspace.id.clone()).await.unwrap();
+        let restored = get.execute(workspace.id.clone()).await.unwrap();
         assert_eq!(
             restored.status,
             devforge_domain::workspace::WorkspaceStatus::Active
@@ -339,9 +368,9 @@ mod tests {
 
         let workspace = create.execute("测试".to_owned(), None).await.unwrap();
 
-        delete.execute(workspace.id.0.clone()).await.unwrap();
+        delete.execute(workspace.id.clone()).await.unwrap();
 
-        let result = get.execute(workspace.id.0.clone()).await;
+        let result = get.execute(workspace.id.clone()).await;
         assert!(result.is_err());
     }
 }

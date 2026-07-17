@@ -353,6 +353,56 @@ impl devforge_application::discovery::DocumentRepository for SqliteDocumentRepos
         Ok(documents)
     }
 
+    async fn list_by_source_and_parent(
+        &self,
+        source_id: &SourceId,
+        parent_path: Option<&str>,
+    ) -> Result<Vec<Document>, DomainError> {
+        let all_docs = self.list_by_source(source_id).await?;
+        let mut result = Vec::new();
+        let mut seen_dirs = std::collections::HashSet::new();
+
+        for doc in all_docs {
+            let path_str = doc.relative_path.to_string_lossy().to_string();
+            let path = std::path::PathBuf::from(&path_str);
+
+            match parent_path {
+                Some(parent) => {
+                    // 只返回直接子文件和子目录
+                    if let Some(parent_of) = path.parent() {
+                        if parent_of.to_string_lossy() == parent {
+                            result.push(doc);
+                        }
+                    }
+                }
+                None => {
+                    // 根目录：返回根目录下的文件和第一层目录
+                    let components: Vec<_> = path.components().collect();
+                    if components.len() == 1 {
+                        // 根目录下的文件
+                        result.push(doc);
+                    } else if components.len() > 1 {
+                        // 子目录：只返回目录条目
+                        let dir_name = components[0].as_os_str().to_string_lossy().to_string();
+                        if !seen_dirs.contains(&dir_name) {
+                            seen_dirs.insert(dir_name.clone());
+                            // 创建一个虚拟的目录文档
+                            let mut dir_doc = doc;
+                            dir_doc.relative_path = std::path::PathBuf::from(&dir_name);
+                            dir_doc.kind = DocumentKind::Unknown;
+                            dir_doc.size = 0;
+                            dir_doc.content_readable = false;
+                            result.push(dir_doc);
+                        }
+                    }
+                }
+            }
+        }
+
+        result.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+        Ok(result)
+    }
+
     async fn upsert(&self, document: &Document) -> Result<(), DomainError> {
         sqlx::query(
             "INSERT INTO documents (id, source_id, relative_path, kind, size, modified_at, sensitivity, content_readable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(source_id, relative_path) DO UPDATE SET kind = ?, size = ?, modified_at = ?, sensitivity = ?, content_readable = ?"
