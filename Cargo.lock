@@ -663,8 +663,10 @@ name = "devforge-application"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "devforge-domain",
  "serde",
  "specta",
+ "thiserror 2.0.18",
  "tokio",
 ]
 
@@ -674,6 +676,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "devforge-application",
+ "devforge-domain",
  "devforge-platform",
  "devforge-storage",
  "dirs",

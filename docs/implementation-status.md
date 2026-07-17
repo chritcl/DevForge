@@ -25,7 +25,8 @@
 | Domain 模型 | Phase 1 | 已实现 | crates/devforge-domain | 19 unit tests | IMPLEMENTED |
 | SQLite Schema | Phase 1 | 已实现 | crates/devforge-storage/migrations | 9 tests | IMPLEMENTED |
 | Repository 层 | Phase 1 | 已实现 | crates/devforge-storage/src/repository.rs | 4 integration tests | IMPLEMENTED |
-| 工作区管理 | Phase 1 | 待实现 | - | - | NOT STARTED |
+| Workspace CRUD 用例 | Phase 1 | 已实现 | crates/devforge-application/src/workspace.rs | 7 unit tests | IMPLEMENTED |
+| Workspace Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/workspace.rs | 编译通过 | IMPLEMENTED |
 | 本地数据源 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件发现 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件树 | Phase 1 | 待实现 | - | - | NOT STARTED |

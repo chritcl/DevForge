@@ -1,3 +1,5 @@
+//! 应用信息 Tauri 命令
+
 use tauri::{AppHandle, Manager};
 
 use devforge_application::app_info::AppInfo;

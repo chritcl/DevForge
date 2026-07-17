@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use devforge_application::app_info::AppInfo;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformMetadata;
+use devforge_storage::repository::SqliteWorkspaceRepository;
 use devforge_storage::status::SqliteDatabaseStatus;
 
 /// 应用全局状态。
@@ -8,6 +11,7 @@ use devforge_storage::status::SqliteDatabaseStatus;
 /// 只暴露应用用例级接口，不向 Command 暴露 SQLite 连接池。
 pub(crate) struct AppState {
     get_app_info: GetAppInfo<PlatformMetadata, SqliteDatabaseStatus>,
+    workspace_repo: Arc<SqliteWorkspaceRepository>,
 }
 
 impl AppState {
@@ -15,15 +19,22 @@ impl AppState {
     pub(crate) fn new(
         platform_metadata: PlatformMetadata,
         database_status: SqliteDatabaseStatus,
+        workspace_repo: Arc<SqliteWorkspaceRepository>,
     ) -> Self {
         Self {
             get_app_info: GetAppInfo::new(platform_metadata, database_status),
+            workspace_repo,
         }
     }
 
     /// 获取应用信息。
     pub(crate) async fn app_info(&self) -> AppInfo {
         self.get_app_info.execute().await
+    }
+
+    /// 获取工作区 Repository。
+    pub(crate) fn workspace_repo(&self) -> Arc<SqliteWorkspaceRepository> {
+        self.workspace_repo.clone()
     }
 }
 
@@ -55,7 +66,9 @@ mod tests {
                 let database_status =
                     devforge_storage::status::SqliteDatabaseStatus::new(pool.clone());
 
-                let state = AppState::new(platform_metadata, database_status);
+                let workspace_repo = Arc::new(SqliteWorkspaceRepository::new(pool.clone()));
+
+                let state = AppState::new(platform_metadata, database_status, workspace_repo);
 
                 let info = state.app_info().await;
 

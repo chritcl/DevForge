@@ -23,7 +23,7 @@ impl SqliteWorkspaceRepository {
 }
 
 #[async_trait]
-impl WorkspaceRepository for SqliteWorkspaceRepository {
+impl devforge_application::workspace::WorkspaceRepository for SqliteWorkspaceRepository {
     async fn create(&self, workspace: &Workspace) -> Result<(), DomainError> {
         sqlx::query(
             "INSERT INTO workspaces (id, name, description, status, created_at, updated_at, last_opened_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
@@ -135,16 +135,6 @@ impl WorkspaceRepository for SqliteWorkspaceRepository {
             .map_err(|e| DomainError::Io(std::io::Error::other(e)))?;
         Ok(())
     }
-}
-
-/// Workspace Repository Trait
-#[async_trait]
-pub trait WorkspaceRepository: Send + Sync {
-    async fn create(&self, workspace: &Workspace) -> Result<(), DomainError>;
-    async fn get(&self, id: &WorkspaceId) -> Result<Option<Workspace>, DomainError>;
-    async fn list(&self) -> Result<Vec<Workspace>, DomainError>;
-    async fn update(&self, workspace: &Workspace) -> Result<(), DomainError>;
-    async fn delete(&self, id: &WorkspaceId) -> Result<(), DomainError>;
 }
 
 /// Source Repository
@@ -537,6 +527,7 @@ pub trait OpenTabRepository: Send + Sync {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use devforge_application::workspace::WorkspaceRepository;
     use sqlx::SqlitePool;
 
     async fn setup_test_db() -> SqlitePool {

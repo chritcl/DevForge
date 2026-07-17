@@ -8,8 +8,10 @@ publish = false
 
 [dependencies]
 async-trait = { workspace = true }
+devforge-domain = { workspace = true }
 serde = { workspace = true }
 specta = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

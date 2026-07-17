@@ -3,6 +3,8 @@
 mod commands;
 mod state;
 
+use std::sync::Arc;
+
 use anyhow::Context;
 use specta_typescript::Typescript;
 use tauri_specta::{collect_commands, Builder};
@@ -58,7 +60,15 @@ async fn initialize_app_state(
     let database_status =
         devforge_storage::status::SqliteDatabaseStatus::new(database.pool().clone());
 
-    Ok(AppState::new(platform_metadata, database_status))
+    let workspace_repo = Arc::new(
+        devforge_storage::repository::SqliteWorkspaceRepository::new(database.pool().clone()),
+    );
+
+    Ok(AppState::new(
+        platform_metadata,
+        database_status,
+        workspace_repo,
+    ))
 }
 
 /// 启动 Tauri 应用。
@@ -93,6 +103,15 @@ pub fn run() -> anyhow::Result<()> {
     tauri::Builder::default()
         .manage(app_state)
         .invoke_handler(builder.invoke_handler())
+        .invoke_handler(tauri::generate_handler![
+            commands::create_workspace,
+            commands::get_workspace,
+            commands::list_workspaces,
+            commands::update_workspace,
+            commands::archive_workspace,
+            commands::restore_workspace,
+            commands::delete_workspace,
+        ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;
 
