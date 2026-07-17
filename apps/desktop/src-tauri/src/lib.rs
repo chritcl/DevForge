@@ -126,6 +126,8 @@ pub fn run() -> anyhow::Result<()> {
             commands::list_sources,
             commands::remove_source,
             commands::scan_source,
+            commands::list_documents,
+            commands::read_document_content,
         ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;

@@ -2,6 +2,7 @@
 
 pub mod app_info;
 pub mod discovery;
+pub mod document;
 pub mod get_app_info;
 pub mod ports;
 pub mod source;

@@ -32,6 +32,8 @@
 | Source Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/source.rs | 编译通过 | IMPLEMENTED |
 | 文件发现用例 | Phase 1 | 已实现 | crates/devforge-application/src/discovery.rs | 7 unit tests | IMPLEMENTED |
 | 文件发现 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/discovery.rs | 编译通过 | IMPLEMENTED |
+| 文档查询用例 | Phase 1 | 已实现 | crates/devforge-application/src/document.rs | 3 unit tests | IMPLEMENTED |
+| 文档 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/document.rs | 编译通过 | IMPLEMENTED |
 | 本地数据源 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件发现 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件树 | Phase 1 | 待实现 | - | - | NOT STARTED |
