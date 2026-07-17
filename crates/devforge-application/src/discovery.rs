@@ -517,7 +517,8 @@ mod tests {
                                 result.push(doc.clone());
                             } else if components.len() > 1 {
                                 // 子目录：只返回目录条目（使用第一个组件作为目录名）
-                                let dir_name = components[0].as_os_str().to_string_lossy().to_string();
+                                let dir_name =
+                                    components[0].as_os_str().to_string_lossy().to_string();
                                 if !seen_dirs.contains(&dir_name) {
                                     seen_dirs.insert(dir_name.clone());
                                     // 创建一个虚拟的目录文档

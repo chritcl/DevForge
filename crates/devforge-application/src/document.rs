@@ -211,8 +211,7 @@ mod tests {
                         if components.len() == 1 {
                             result.push(doc.clone());
                         } else if components.len() > 1 {
-                            let dir_name =
-                                components[0].as_os_str().to_string_lossy().to_string();
+                            let dir_name = components[0].as_os_str().to_string_lossy().to_string();
                             if !seen_dirs.contains(&dir_name) {
                                 seen_dirs.insert(dir_name.clone());
                                 let mut dir_doc = doc.clone();

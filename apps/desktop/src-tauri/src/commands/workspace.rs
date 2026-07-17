@@ -24,7 +24,10 @@ pub async fn create_workspace(
 /// 获取工作区
 #[tauri::command]
 #[specta::specta]
-pub async fn get_workspace(state: State<'_, AppState>, id: String) -> Result<WorkspaceDto, AppError> {
+pub async fn get_workspace(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<WorkspaceDto, AppError> {
     let use_case = GetWorkspace::new(state.workspace_repo());
     use_case.execute(id).await
 }
