@@ -399,7 +399,7 @@ impl SqliteOpenTabRepository {
 }
 
 #[async_trait]
-impl OpenTabRepository for SqliteOpenTabRepository {
+impl devforge_application::tab::TabRepository for SqliteOpenTabRepository {
     async fn create(&self, tab: &OpenTab) -> Result<(), DomainError> {
         sqlx::query(
             "INSERT INTO open_tabs (id, workspace_id, document_id, position, is_active, opened_at) VALUES (?, ?, ?, ?, ?, ?)"
@@ -487,26 +487,13 @@ impl OpenTabRepository for SqliteOpenTabRepository {
     }
 }
 
-/// OpenTab Repository Trait
-#[async_trait]
-pub trait OpenTabRepository: Send + Sync {
-    async fn create(&self, tab: &OpenTab) -> Result<(), DomainError>;
-    async fn list_by_workspace(
-        &self,
-        workspace_id: &WorkspaceId,
-    ) -> Result<Vec<OpenTab>, DomainError>;
-    async fn set_active(&self, workspace_id: &WorkspaceId, tab_id: &str)
-        -> Result<(), DomainError>;
-    async fn delete(&self, id: &str) -> Result<(), DomainError>;
-    async fn delete_by_workspace(&self, workspace_id: &WorkspaceId) -> Result<(), DomainError>;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::Utc;
     use devforge_application::discovery::DocumentRepository;
     use devforge_application::source::SourceRepository;
+    use devforge_application::tab::TabRepository;
     use devforge_application::workspace::WorkspaceRepository;
     use sqlx::SqlitePool;
 

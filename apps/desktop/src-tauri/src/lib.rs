@@ -72,12 +72,17 @@ async fn initialize_app_state(
         database.pool().clone(),
     ));
 
+    let tab_repo = Arc::new(devforge_storage::repository::SqliteOpenTabRepository::new(
+        database.pool().clone(),
+    ));
+
     Ok(AppState::new(
         platform_metadata,
         database_status,
         workspace_repo,
         source_repo,
         document_repo,
+        tab_repo,
     ))
 }
 
@@ -128,6 +133,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::scan_source,
             commands::list_documents,
             commands::read_document_content,
+            commands::open_tab,
+            commands::close_tab,
+            commands::list_tabs,
+            commands::set_active_tab,
         ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;

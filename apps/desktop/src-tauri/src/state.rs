@@ -4,7 +4,8 @@ use devforge_application::app_info::AppInfo;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformMetadata;
 use devforge_storage::repository::{
-    SqliteDocumentRepository, SqliteSourceRepository, SqliteWorkspaceRepository,
+    SqliteDocumentRepository, SqliteOpenTabRepository, SqliteSourceRepository,
+    SqliteWorkspaceRepository,
 };
 use devforge_storage::status::SqliteDatabaseStatus;
 
@@ -16,6 +17,7 @@ pub(crate) struct AppState {
     workspace_repo: Arc<SqliteWorkspaceRepository>,
     source_repo: Arc<SqliteSourceRepository>,
     document_repo: Arc<SqliteDocumentRepository>,
+    tab_repo: Arc<SqliteOpenTabRepository>,
 }
 
 impl AppState {
@@ -26,12 +28,14 @@ impl AppState {
         workspace_repo: Arc<SqliteWorkspaceRepository>,
         source_repo: Arc<SqliteSourceRepository>,
         document_repo: Arc<SqliteDocumentRepository>,
+        tab_repo: Arc<SqliteOpenTabRepository>,
     ) -> Self {
         Self {
             get_app_info: GetAppInfo::new(platform_metadata, database_status),
             workspace_repo,
             source_repo,
             document_repo,
+            tab_repo,
         }
     }
 
@@ -53,6 +57,11 @@ impl AppState {
     /// 获取文档 Repository。
     pub(crate) fn document_repo(&self) -> Arc<SqliteDocumentRepository> {
         self.document_repo.clone()
+    }
+
+    /// 获取标签页 Repository。
+    pub(crate) fn tab_repo(&self) -> Arc<SqliteOpenTabRepository> {
+        self.tab_repo.clone()
     }
 }
 
@@ -87,6 +96,7 @@ mod tests {
                 let workspace_repo = Arc::new(SqliteWorkspaceRepository::new(pool.clone()));
                 let source_repo = Arc::new(SqliteSourceRepository::new(pool.clone()));
                 let document_repo = Arc::new(SqliteDocumentRepository::new(pool.clone()));
+                let tab_repo = Arc::new(SqliteOpenTabRepository::new(pool.clone()));
 
                 let state = AppState::new(
                     platform_metadata,
@@ -94,6 +104,7 @@ mod tests {
                     workspace_repo,
                     source_repo,
                     document_repo,
+                    tab_repo,
                 );
 
                 let info = state.app_info().await;

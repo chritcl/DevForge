@@ -38,7 +38,9 @@
 | 文件查看器组件 | Phase 1 | 已实现 | apps/desktop/src/components/FileViewer.tsx | 编译通过 | IMPLEMENTED |
 | 工作区页面 | Phase 1 | 已实现 | apps/desktop/src/pages/WorkspacePage.tsx | 编译通过 | IMPLEMENTED |
 | 工作区列表页面 | Phase 1 | 已实现 | apps/desktop/src/pages/WorkspaceListPage.tsx | 编译通过 | IMPLEMENTED |
-| 本地数据源 | Phase 1 | 待实现 | - | - | NOT STARTED |
+| 标签页用例 | Phase 1 | 已实现 | crates/devforge-application/src/tab.rs | 5 unit tests | IMPLEMENTED |
+| 标签页 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/tab.rs | 编译通过 | IMPLEMENTED |
+| 标签页 hooks | Phase 1 | 已实现 | apps/desktop/src/hooks/useTabs.ts | 编译通过 | IMPLEMENTED |
 | 文件发现 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件树 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件查看器 | Phase 1 | 待实现 | - | - | NOT STARTED |

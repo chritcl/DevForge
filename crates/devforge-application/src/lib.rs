@@ -6,4 +6,5 @@ pub mod document;
 pub mod get_app_info;
 pub mod ports;
 pub mod source;
+pub mod tab;
 pub mod workspace;
