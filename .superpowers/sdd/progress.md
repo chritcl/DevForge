@@ -7,7 +7,7 @@
 | Task 1: Fix Specta Binding Generation | 完成 | 待提交 | 待审查 |
 | Task 2: Fix modified_at Calculation | 完成 | 待提交 | 待审查 |
 | Task 3: Fix list_documents Lazy-Load Query | 完成 | 待提交 | 待审查 |
-| Task 4: Complete Add Source and Scan UI | 待开始 | - | - |
+| Task 4: Complete Add Source and Scan UI | 完成 | 待提交 | 待审查 |
 | Task 5: Implement True Lazy-Load File Tree | 待开始 | - | - |
 | Task 6: Complete Tab Bar and Tab Management | 待开始 | - | - |
 | Task 7: Fix Tab Active Status + Transaction | 完成 | 待提交 | 待审查 |
@@ -22,7 +22,7 @@
 
 ### P1 - 主流程不可用
 - [x] Bug 3: Specta 绑定不完整
-- [ ] Bug 4: 无添加数据源 UI
+- [x] Bug 4: 无添加数据源 UI
 - [ ] Bug 5: 文件树非懒加载
 - [ ] Bug 6: 无启动恢复逻辑
 - [x] Bug 7: 标签活跃状态切换为空操作

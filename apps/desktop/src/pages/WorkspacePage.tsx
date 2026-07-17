@@ -4,6 +4,7 @@ import { useWorkspace } from "../hooks/useWorkspaces";
 import { useSources } from "../hooks/useSources";
 import { FileTree } from "../components/FileTree";
 import { FileViewer } from "../components/FileViewer";
+import { AddSourceDialog } from "../components/AddSourceDialog";
 import type { DocumentDto } from "../types";
 
 export function WorkspacePage() {
@@ -12,6 +13,7 @@ export function WorkspacePage() {
   const { data: sources } = useSources(id ?? "");
   const [selectedDoc, setSelectedDoc] = useState<DocumentDto | null>(null);
   const [selectedSourceRoot, setSelectedSourceRoot] = useState<string>("");
+  const [showAddSource, setShowAddSource] = useState(false);
 
   if (isLoading) {
     return <div className="workspace-loading">加载中...</div>;
@@ -46,7 +48,16 @@ export function WorkspacePage() {
       <div className="workspace-content">
         <div className="workspace-sidebar">
           <div className="workspace-explorer">
-            <h2>资源管理器</h2>
+            <div className="workspace-explorer-header">
+              <h2>资源管理器</h2>
+              <button
+                className="btn btn-small btn-primary"
+                onClick={() => setShowAddSource(true)}
+                title="添加数据源"
+              >
+                +
+              </button>
+            </div>
             {sources?.map((source) => (
               <FileTree
                 key={source.id}
@@ -58,7 +69,13 @@ export function WorkspacePage() {
             ))}
             {(!sources || sources.length === 0) && (
               <div className="workspace-no-sources">
-                暂无数据源，请先添加目录或 Git 仓库。
+                <p>暂无数据源</p>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setShowAddSource(true)}
+                >
+                  添加数据源
+                </button>
               </div>
             )}
           </div>
@@ -83,6 +100,13 @@ export function WorkspacePage() {
           )}
         </div>
       </div>
+
+      {showAddSource && id && (
+        <AddSourceDialog
+          workspaceId={id}
+          onClose={() => setShowAddSource(false)}
+        />
+      )}
     </div>
   );
 }

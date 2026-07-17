@@ -31,5 +31,8 @@ tauri-specta = { workspace = true }
 # Task 7 新增
 devforge-storage = { workspace = true }
 
+# Task 4 新增：dialog 插件
+tauri-plugin-dialog = "2"
+
 [dev-dependencies]
 tempfile = { workspace = true }

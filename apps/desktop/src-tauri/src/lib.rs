@@ -136,6 +136,7 @@ pub fn run() -> anyhow::Result<()> {
     let builder = create_builder();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(builder.invoke_handler())
         .run(tauri::generate_context!())
