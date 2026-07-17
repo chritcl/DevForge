@@ -12,7 +12,7 @@
 | Task 6: Complete Tab Bar and Tab Management | 完成 | 待提交 | 待审查 |
 | Task 7: Fix Tab Active Status + Transaction | 完成 | 待提交 | 待审查 |
 | Task 8: Implement Startup Restore | 完成 | 待提交 | 待审查 |
-| Task 9: End-to-End Verification | 待开始 | - | - |
+| Task 9: End-to-End Verification | 完成 | 待提交 | 待审查 |
 
 ## 关键问题
 
