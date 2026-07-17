@@ -7,6 +7,8 @@
 - 构建时工作区状态：非干净
 - 构建时未提交文件：apps/desktop/src-tauri/tauri.conf.json
 - tauri.conf.json SHA256：4645B258CF249908629540D7413131EECC87DFAF537266421092F01BE6BB79B5
+- Bundle 配置与初始报告提交：3cab313aae39a972f19fde3bca6fa863e6b4d027
+- Task 10 状态收尾提交：0e2fff5c72ed70f1dad8ae0bfe07630947e1d006
 
 ## 环境信息
 
@@ -43,16 +45,42 @@
 
 ## 数据保护
 
-- 原始数据目录：C:\Users\<USER>\AppData\Local\DevForge
-- 备份目录：C:\Users\<USER>\AppData\Local\DevForge.backup-20260716-173028
-- 重命名目录：C:\Users\<USER>\AppData\Local\DevForge.pre-smoke-20260716-173028
-- 原始目录状态：已重命名（不存在）
-- 备份状态：PASS
+### 验证前数据保护
+
+- 原始数据目录：
+  C:\Users\<USER>\AppData\Local\DevForge
+
+- 验证前处理：
+  原始数据目录已重命名为
+  C:\Users\<USER>\AppData\Local\DevForge.pre-smoke-20260716-173028
+
+- 安全备份：
+  C:\Users\<USER>\AppData\Local\DevForge.backup-20260716-173028
+
+- 备份结果：PASS
+- 空数据库验证环境：PASS
+
+### 验证后数据恢复
+
 - 卸载后测试数据库：PASS，devforge.db 保留
-- 测试数据归档：C:\Users\<USER>\AppData\Local\DevForge.smoke-20260716-173028
-- 原数据恢复：PASS
-- 原数据目录：C:\Users\<USER>\AppData\Local\DevForge
-- 安全备份保留：C:\Users\<USER>\AppData\Local\DevForge.backup-20260716-173028
+
+- 测试数据归档：
+  C:\Users\<USER>\AppData\Local\DevForge.smoke-20260716-173028
+
+- 原始数据恢复：PASS
+
+- 最终原数据目录：
+  C:\Users\<USER>\AppData\Local\DevForge
+
+- pre-smoke 中间目录：
+  已通过重命名恢复，不再存在
+
+- 安全备份：
+  C:\Users\<USER>\AppData\Local\DevForge.backup-20260716-173028
+
+- 安全备份最终状态：保留
+
+- 冒烟测试数据最终状态：保留
 
 ## 质量检查
 
@@ -101,6 +129,20 @@
 | A7. 存在卸载程序 | PASS |
 | A8. 存在开始菜单快捷方式 | PASS |
 
+### 安装证据摘要
+
+- 安装目录：
+  C:\Program Files\DevForge
+
+- 主程序路径：
+  NOT CAPTURED — 人工确认文件存在，但卸载后无法再次复核精确路径
+
+- 卸载程序路径：
+  C:\Program Files\DevForge\uninstall.exe
+
+- 开始菜单快捷方式路径：
+  NOT CAPTURED — 人工确认快捷方式存在，但卸载后无法再次复核精确路径
+
 ### 首次启动检查 (B)
 
 | 检查项 | 状态 |
@@ -140,6 +182,13 @@
 ## 失败项
 
 无
+
+## 证据限制
+
+- GUI 安装、窗口显示、第二次启动和卸载结果来自用户人工确认。
+- 卸载后的注册表、Program Files、进程和数据库状态由自动检查复核。
+- 未在卸载前保存的精确主程序或快捷方式路径标记为 NOT CAPTURED。
+- 该证据限制不影响 Task 10 的功能结论，但属于验证报告的审计说明。
 
 ## 未验证项
 
