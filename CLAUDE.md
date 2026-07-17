@@ -31,9 +31,11 @@ DevForge — 面向开发者的本地知识库、跨项目代码检索与受控 
 
 ## 当前阶段
 
-当前实施阶段：[docs/phases/phase-0-foundation.md](docs/phases/phase-0-foundation.md)
+当前实施阶段：[docs/phases/phase-1-workspaces.md](docs/phases/phase-1-workspaces.md)
 
-当前已批准计划：[docs/plans/phase-0-foundation-plan.md](docs/plans/phase-0-foundation-plan.md)
+当前已批准计划：[docs/design/phase-1-local-workspace-design.md](docs/design/phase-1-local-workspace-design.md)
+
+Phase 0 已完成：[docs/phases/phase-0-foundation.md](docs/phases/phase-0-foundation.md)
 
 ## 规则与 Skills
 

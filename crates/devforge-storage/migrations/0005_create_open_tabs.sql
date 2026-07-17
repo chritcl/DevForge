@@ -1,0 +1,9 @@
+-- 打开标签表
+CREATE TABLE IF NOT EXISTS open_tabs (
+    id TEXT PRIMARY KEY NOT NULL,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

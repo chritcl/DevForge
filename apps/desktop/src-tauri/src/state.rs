@@ -84,10 +84,10 @@ mod tests {
                 matches!(
                     info.db_status,
                     DbStatus::Ready {
-                        migration_version: 1,
+                        migration_version: 5,
                     }
                 ),
-                "数据库状态应为 Ready，migration_version 应为 1",
+                "数据库状态应为 Ready，migration_version 应为 5",
             );
 
             Ok(())

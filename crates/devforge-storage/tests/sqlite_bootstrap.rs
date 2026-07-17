@@ -68,7 +68,7 @@ async fn migration_runs_on_empty_database() -> Result<(), Box<dyn std::error::Er
         .fetch_one(pool)
         .await?;
 
-        // 验证 schema_version == 1
+        // 验证 schema_version == 5（当前共 5 个 Migration）
         let version = migrator::schema_version(pool).await?;
 
         Ok((table_count.0, version))
@@ -83,7 +83,7 @@ async fn migration_runs_on_empty_database() -> Result<(), Box<dyn std::error::Er
 
     // 所有断言在关闭 Pool 之后执行
     assert_eq!(table_count, 1, "app_meta 表应存在");
-    assert_eq!(version, 1, "schema_version 应为 1");
+    assert_eq!(version, 5, "schema_version 应为 5");
 
     Ok(())
 }
@@ -104,7 +104,7 @@ async fn migration_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
         // 第二次执行
         migrator::run_migrations(pool).await?;
 
-        // 验证 schema_version 仍为 1
+        // 验证 schema_version 仍为 5（当前共 5 个 Migration）
         let version = migrator::schema_version(pool).await?;
 
         // 验证 app_meta 仍只有一个表定义
@@ -125,7 +125,7 @@ async fn migration_is_idempotent() -> Result<(), Box<dyn std::error::Error>> {
     let (version, table_count) = observed?;
 
     // 所有断言在关闭 Pool 之后执行
-    assert_eq!(version, 1, "重复执行后 schema_version 应仍为 1");
+    assert_eq!(version, 5, "重复执行后 schema_version 应仍为 5");
     assert_eq!(table_count, 1, "app_meta 表应仍只有一个");
 
     Ok(())
@@ -158,15 +158,15 @@ async fn health_status_ready_after_migration() -> Result<(), Box<dyn std::error:
     // 传播数据库操作错误
     let (status, _provider) = observed?;
 
-    // 计算布尔值，然后断言
+    // 计算布尔值，然后断言（当前共 5 个 Migration）
     let is_ready = matches!(
         status,
         DbStatus::Ready {
-            migration_version: 1
+            migration_version: 5
         }
     );
 
-    assert!(is_ready, "数据库状态应为 Ready，migration_version 应为 1");
+    assert!(is_ready, "数据库状态应为 Ready，migration_version 应为 5");
 
     Ok(())
 }

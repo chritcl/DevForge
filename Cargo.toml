@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/devforge-domain",
     "crates/devforge-application",
     "crates/devforge-storage",
     "crates/devforge-platform",
@@ -29,6 +30,7 @@ thiserror = "2"
 tempfile = "3"
 
 # 内部 crate
+devforge-domain = { path = "crates/devforge-domain" }
 devforge-application = { path = "crates/devforge-application" }
 devforge-storage = { path = "crates/devforge-storage" }
 devforge-platform = { path = "crates/devforge-platform" }
