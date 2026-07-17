@@ -1,0 +1,481 @@
+/* 工作区页面样式 */
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.workspace-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.workspace-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.workspace-description {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.workspace-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.workspace-sidebar {
+  width: 280px;
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+}
+
+.workspace-explorer {
+  padding: 16px;
+}
+
+.workspace-explorer h2 {
+  margin: 0 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.workspace-main {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* 文件树样式 */
+
+.file-tree {
+  margin-bottom: 8px;
+}
+
+.file-tree-header,
+.file-tree-dir-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.file-tree-header:hover,
+.file-tree-dir-header:hover {
+  background: var(--hover-bg);
+}
+
+.file-tree-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.file-tree-name {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-tree-content,
+.file-tree-dir-content {
+  padding-left: 16px;
+}
+
+.file-tree-file {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.file-tree-file:hover {
+  background: var(--hover-bg);
+}
+
+.file-tree-file-sensitive {
+  opacity: 0.7;
+}
+
+.file-tree-sensitive-badge {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.file-tree-empty {
+  padding: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.file-tree-loading,
+.file-tree-error {
+  padding: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* 文件查看器样式 */
+
+.file-viewer-loading,
+.file-viewer-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.file-viewer-sensitive,
+.file-viewer-binary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.file-viewer-sensitive-icon,
+.file-viewer-binary-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.file-viewer-sensitive-title,
+.file-viewer-binary-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.file-viewer-sensitive-message,
+.file-viewer-binary-message {
+  font-size: 14px;
+  text-align: center;
+  max-width: 400px;
+}
+
+.file-viewer-text,
+.file-viewer-markdown {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-viewer-text-header,
+.file-viewer-markdown-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.file-viewer-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.file-viewer-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.file-viewer-text-content,
+.file-viewer-markdown-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.file-viewer-text-content pre,
+.file-viewer-markdown-content pre {
+  margin: 0;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* 工作区列表样式 */
+
+.workspace-list-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.workspace-list-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.workspace-list-header h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.workspace-list-header p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+.workspace-list-actions {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 32px;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-card {
+  padding: 16px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.workspace-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.workspace-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.workspace-card-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.workspace-archived-badge {
+  padding: 2px 8px;
+  background: var(--warning-bg);
+  color: var(--warning-color);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.workspace-card-description {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.workspace-card-meta {
+  display: flex;
+  gap: 16px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.workspace-list-empty {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-secondary);
+}
+
+.workspace-list-empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.workspace-list-empty-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.workspace-list-empty-message {
+  font-size: 14px;
+}
+
+.workspace-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.workspace-welcome-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.workspace-welcome-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.workspace-welcome-message {
+  font-size: 16px;
+}
+
+.workspace-no-sources {
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 按钮样式 */
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-color-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  background: var(--hover-bg);
+}
+
+/* 对话框样式 */
+
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  width: 480px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0;
+  line-height: 1;
+}
+
+.dialog-close:hover {
+  color: var(--text-primary);
+}
+
+.dialog-content {
+  padding: 20px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(var(--primary-color-rgb), 0.2);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}

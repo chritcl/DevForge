@@ -1,10 +1,11 @@
 import { createHashRouter } from "react-router";
 
 import App from "./App";
-import { HomePage } from "./pages/HomePage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { RouteErrorPage } from "./pages/RouteErrorPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { WorkspaceListPage } from "./pages/WorkspaceListPage";
+import { WorkspacePage } from "./pages/WorkspacePage";
 
 export const router = createHashRouter([
   {
@@ -14,7 +15,11 @@ export const router = createHashRouter([
     children: [
       {
         index: true,
-        Component: HomePage,
+        Component: WorkspaceListPage,
+      },
+      {
+        path: "workspace/:id",
+        Component: WorkspacePage,
       },
       {
         path: "settings",

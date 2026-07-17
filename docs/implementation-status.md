@@ -34,6 +34,10 @@
 | 文件发现 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/discovery.rs | 编译通过 | IMPLEMENTED |
 | 文档查询用例 | Phase 1 | 已实现 | crates/devforge-application/src/document.rs | 3 unit tests | IMPLEMENTED |
 | 文档 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/document.rs | 编译通过 | IMPLEMENTED |
+| 文件树组件 | Phase 1 | 已实现 | apps/desktop/src/components/FileTree.tsx | 编译通过 | IMPLEMENTED |
+| 文件查看器组件 | Phase 1 | 已实现 | apps/desktop/src/components/FileViewer.tsx | 编译通过 | IMPLEMENTED |
+| 工作区页面 | Phase 1 | 已实现 | apps/desktop/src/pages/WorkspacePage.tsx | 编译通过 | IMPLEMENTED |
+| 工作区列表页面 | Phase 1 | 已实现 | apps/desktop/src/pages/WorkspaceListPage.tsx | 编译通过 | IMPLEMENTED |
 | 本地数据源 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件发现 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件树 | Phase 1 | 待实现 | - | - | NOT STARTED |
