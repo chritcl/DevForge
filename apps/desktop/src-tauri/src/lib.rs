@@ -64,10 +64,15 @@ async fn initialize_app_state(
         devforge_storage::repository::SqliteWorkspaceRepository::new(database.pool().clone()),
     );
 
+    let source_repo = Arc::new(devforge_storage::repository::SqliteSourceRepository::new(
+        database.pool().clone(),
+    ));
+
     Ok(AppState::new(
         platform_metadata,
         database_status,
         workspace_repo,
+        source_repo,
     ))
 }
 
@@ -111,6 +116,10 @@ pub fn run() -> anyhow::Result<()> {
             commands::archive_workspace,
             commands::restore_workspace,
             commands::delete_workspace,
+            commands::add_git_source,
+            commands::add_directory_source,
+            commands::list_sources,
+            commands::remove_source,
         ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;

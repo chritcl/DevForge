@@ -149,7 +149,7 @@ impl SqliteSourceRepository {
 }
 
 #[async_trait]
-impl SourceRepository for SqliteSourceRepository {
+impl devforge_application::source::SourceRepository for SqliteSourceRepository {
     async fn create(&self, source: &Source) -> Result<(), DomainError> {
         sqlx::query(
             "INSERT INTO sources (id, workspace_id, name, root_path, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)"
@@ -231,18 +231,6 @@ impl SourceRepository for SqliteSourceRepository {
             .map_err(|e| DomainError::Io(std::io::Error::other(e)))?;
         Ok(())
     }
-}
-
-/// Source Repository Trait
-#[async_trait]
-pub trait SourceRepository: Send + Sync {
-    async fn create(&self, source: &Source) -> Result<(), DomainError>;
-    async fn get(&self, id: &SourceId) -> Result<Option<Source>, DomainError>;
-    async fn list_by_workspace(
-        &self,
-        workspace_id: &WorkspaceId,
-    ) -> Result<Vec<Source>, DomainError>;
-    async fn delete(&self, id: &SourceId) -> Result<(), DomainError>;
 }
 
 /// Document Repository
@@ -527,6 +515,7 @@ pub trait OpenTabRepository: Send + Sync {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use devforge_application::source::SourceRepository;
     use devforge_application::workspace::WorkspaceRepository;
     use sqlx::SqlitePool;
 

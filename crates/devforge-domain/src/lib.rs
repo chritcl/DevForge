@@ -5,5 +5,6 @@
 pub mod document;
 pub mod error;
 pub mod opentab;
+pub mod path_guard;
 pub mod source;
 pub mod workspace;
