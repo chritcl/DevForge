@@ -245,7 +245,7 @@ impl SqliteDocumentRepository {
 }
 
 #[async_trait]
-impl DocumentRepository for SqliteDocumentRepository {
+impl devforge_application::discovery::DocumentRepository for SqliteDocumentRepository {
     async fn create(&self, document: &Document) -> Result<(), DomainError> {
         sqlx::query(
             "INSERT INTO documents (id, source_id, relative_path, kind, size, modified_at, sensitivity, content_readable, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -387,16 +387,6 @@ impl DocumentRepository for SqliteDocumentRepository {
     }
 }
 
-/// Document Repository Trait
-#[async_trait]
-pub trait DocumentRepository: Send + Sync {
-    async fn create(&self, document: &Document) -> Result<(), DomainError>;
-    async fn get(&self, id: &DocumentId) -> Result<Option<Document>, DomainError>;
-    async fn list_by_source(&self, source_id: &SourceId) -> Result<Vec<Document>, DomainError>;
-    async fn upsert(&self, document: &Document) -> Result<(), DomainError>;
-    async fn delete_by_source(&self, source_id: &SourceId) -> Result<(), DomainError>;
-}
-
 /// OpenTab Repository
 pub struct SqliteOpenTabRepository {
     pool: SqlitePool,
@@ -515,6 +505,7 @@ pub trait OpenTabRepository: Send + Sync {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use devforge_application::discovery::DocumentRepository;
     use devforge_application::source::SourceRepository;
     use devforge_application::workspace::WorkspaceRepository;
     use sqlx::SqlitePool;

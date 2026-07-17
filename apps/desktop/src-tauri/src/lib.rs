@@ -68,11 +68,16 @@ async fn initialize_app_state(
         database.pool().clone(),
     ));
 
+    let document_repo = Arc::new(devforge_storage::repository::SqliteDocumentRepository::new(
+        database.pool().clone(),
+    ));
+
     Ok(AppState::new(
         platform_metadata,
         database_status,
         workspace_repo,
         source_repo,
+        document_repo,
     ))
 }
 
@@ -120,6 +125,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::add_directory_source,
             commands::list_sources,
             commands::remove_source,
+            commands::scan_source,
         ])
         .run(tauri::generate_context!())
         .context("无法启动 Tauri 应用")?;

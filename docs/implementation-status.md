@@ -30,6 +30,8 @@
 | PathGuard 路径安全 | Phase 1 | 已实现 | crates/devforge-domain/src/path_guard.rs | 10 unit tests | IMPLEMENTED |
 | Source CRUD 用例 | Phase 1 | 已实现 | crates/devforge-application/src/source.rs | 7 unit tests | IMPLEMENTED |
 | Source Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/source.rs | 编译通过 | IMPLEMENTED |
+| 文件发现用例 | Phase 1 | 已实现 | crates/devforge-application/src/discovery.rs | 7 unit tests | IMPLEMENTED |
+| 文件发现 Tauri 命令 | Phase 1 | 已实现 | apps/desktop/src-tauri/src/commands/discovery.rs | 编译通过 | IMPLEMENTED |
 | 本地数据源 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件发现 | Phase 1 | 待实现 | - | - | NOT STARTED |
 | 文件树 | Phase 1 | 待实现 | - | - | NOT STARTED |
