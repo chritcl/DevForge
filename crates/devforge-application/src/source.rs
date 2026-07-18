@@ -77,11 +77,139 @@ impl From<PathError> for SourceError {
     }
 }
 
-/// 添加 Git 数据源用例
+/// 规范化路径用于比较和存储
+///
+/// 使用 std::fs::canonicalize 解析 symlink 和相对路径。
+/// Windows 下统一处理 \\?\ 前缀。
+/// 返回的路径用于数据库存储和重复检测。
+pub fn normalize_path(path: &std::path::Path) -> Result<PathBuf, SourceError> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|e| SourceError::Path(format!("无法规范化路径 {}: {}", path.display(), e)))?;
+
+    // Windows 下去除 \\?\ 前缀
+    #[cfg(windows)]
+    let canonical = {
+        let s = canonical.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix("\\\\?\\") {
+            PathBuf::from(stripped)
+        } else {
+            canonical
+        }
+    };
+
+    Ok(canonical)
+}
+
+/// 生成路径的比较键（Windows 大小写不敏感）
+///
+/// 用于重复路径检测，不用于存储。
+pub fn path_comparison_key(path: &std::path::Path) -> String {
+    path.to_string_lossy().to_lowercase()
+}
+
+/// 检测路径对应的数据源类型
+///
+/// 1. .git 是目录 → 普通 Git 仓库
+/// 2. .git 是文件且包含合法 gitdir: 指向 → Git Worktree
+/// 3. 否则 → 普通目录
+pub fn detect_source_kind(root_path: &std::path::Path) -> SourceKind {
+    let git_path = root_path.join(".git");
+    if !git_path.exists() {
+        return SourceKind::Directory;
+    }
+    if git_path.is_dir() {
+        return SourceKind::Git;
+    }
+    // .git 是文件，检查是否为 Worktree
+    if let Ok(content) = std::fs::read_to_string(&git_path) {
+        for line in content.lines() {
+            if let Some(gitdir_value) = line.strip_prefix("gitdir:") {
+                let gitdir_value = gitdir_value.trim();
+                // 解析 gitdir 路径（可能是相对或绝对）
+                let gitdir_path = if std::path::Path::new(gitdir_value).is_absolute() {
+                    std::path::PathBuf::from(gitdir_value)
+                } else {
+                    // 相对路径以 Worktree 根目录为基准
+                    root_path.join(gitdir_value)
+                };
+                // 验证目标存在且为目录
+                if gitdir_path.exists() && gitdir_path.is_dir() {
+                    return SourceKind::Git;
+                }
+            }
+        }
+    }
+    // .git 文件无效或 gitdir 目标不存在，视为普通目录
+    SourceKind::Directory
+}
+
+/// 添加本地数据源用例（统一入口）
+///
+/// 后端自动识别 Git 仓库、Git Worktree 或普通目录。
+/// 添加前 canonicalize 路径，防止重复添加。
+pub struct AddLocalSource {
+    source_repo: Arc<dyn SourceRepository>,
+}
+
+impl AddLocalSource {
+    pub fn new(source_repo: Arc<dyn SourceRepository>) -> Self {
+        Self { source_repo }
+    }
+
+    /// 添加本地数据源
+    pub async fn execute(
+        &self,
+        workspace_id: String,
+        path: PathBuf,
+    ) -> Result<SourceDto, SourceError> {
+        let workspace_id = WorkspaceId(workspace_id);
+
+        // 验证路径存在且是目录
+        if !path.exists() {
+            return Err(SourceError::PathNotExists(path.display().to_string()));
+        }
+        if !path.is_dir() {
+            return Err(SourceError::NotDirectory(path.display().to_string()));
+        }
+
+        // 规范化路径
+        let canonical_path = normalize_path(&path)?;
+
+        // 检查是否已存在（使用规范化后的路径比较）
+        let existing = self.source_repo.list_by_workspace(&workspace_id).await?;
+        let new_key = path_comparison_key(&canonical_path);
+        for src in &existing {
+            let existing_key = path_comparison_key(&src.root_path);
+            if existing_key == new_key {
+                return Err(SourceError::PathAlreadyExists);
+            }
+        }
+
+        // 自动识别数据源类型
+        let kind = detect_source_kind(&canonical_path);
+
+        // 从路径提取名称
+        let name = canonical_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "未命名".to_owned());
+
+        let source = match kind {
+            SourceKind::Git => Source::new_git(workspace_id, name, canonical_path),
+            SourceKind::Directory => Source::new_directory(workspace_id, name, canonical_path),
+        };
+        self.source_repo.create(&source).await?;
+        Ok(SourceDto::from(&source))
+    }
+}
+
+/// 添加 Git 数据源用例（已废弃，请使用 AddLocalSource）
+#[deprecated(note = "请使用 AddLocalSource")]
 pub struct AddGitSource {
     source_repo: Arc<dyn SourceRepository>,
 }
 
+#[allow(deprecated)]
 impl AddGitSource {
     pub fn new(source_repo: Arc<dyn SourceRepository>) -> Self {
         Self { source_repo }
@@ -92,47 +220,23 @@ impl AddGitSource {
         workspace_id: String,
         path: PathBuf,
     ) -> Result<SourceDto, SourceError> {
-        let workspace_id = WorkspaceId(workspace_id);
-
-        // 验证路径存在且是目录
-        if !path.exists() {
-            return Err(SourceError::PathNotExists(path.display().to_string()));
+        let use_case = AddLocalSource::new(self.source_repo.clone());
+        let result = use_case.execute(workspace_id, path).await?;
+        // 验证确实是 Git 类型
+        if result.kind != SourceKind::Git {
+            return Err(SourceError::NotGitRepository(result.root_path));
         }
-        if !path.is_dir() {
-            return Err(SourceError::NotDirectory(path.display().to_string()));
-        }
-
-        // 验证是 Git 仓库
-        let git_dir = path.join(".git");
-        if !git_dir.exists() {
-            return Err(SourceError::NotGitRepository(path.display().to_string()));
-        }
-
-        // 检查是否已存在
-        let existing = self.source_repo.list_by_workspace(&workspace_id).await?;
-        for src in &existing {
-            if src.root_path == path {
-                return Err(SourceError::PathAlreadyExists);
-            }
-        }
-
-        // 从路径提取名称
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "未命名".to_owned());
-
-        let source = Source::new_git(workspace_id, name, path);
-        self.source_repo.create(&source).await?;
-        Ok(SourceDto::from(&source))
+        Ok(result)
     }
 }
 
-/// 添加目录数据源用例
+/// 添加目录数据源用例（已废弃，请使用 AddLocalSource）
+#[deprecated(note = "请使用 AddLocalSource")]
 pub struct AddDirectorySource {
     source_repo: Arc<dyn SourceRepository>,
 }
 
+#[allow(deprecated)]
 impl AddDirectorySource {
     pub fn new(source_repo: Arc<dyn SourceRepository>) -> Self {
         Self { source_repo }
@@ -143,33 +247,9 @@ impl AddDirectorySource {
         workspace_id: String,
         path: PathBuf,
     ) -> Result<SourceDto, SourceError> {
-        let workspace_id = WorkspaceId(workspace_id);
-
-        // 验证路径存在且是目录
-        if !path.exists() {
-            return Err(SourceError::PathNotExists(path.display().to_string()));
-        }
-        if !path.is_dir() {
-            return Err(SourceError::NotDirectory(path.display().to_string()));
-        }
-
-        // 检查是否已存在
-        let existing = self.source_repo.list_by_workspace(&workspace_id).await?;
-        for src in &existing {
-            if src.root_path == path {
-                return Err(SourceError::PathAlreadyExists);
-            }
-        }
-
-        // 从路径提取名称
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "未命名".to_owned());
-
-        let source = Source::new_directory(workspace_id, name, path);
-        self.source_repo.create(&source).await?;
-        Ok(SourceDto::from(&source))
+        // 直接使用 AddLocalSource，不限制类型
+        let use_case = AddLocalSource::new(self.source_repo.clone());
+        use_case.execute(workspace_id, path).await
     }
 }
 
@@ -265,70 +345,102 @@ mod tests {
         }
     }
 
+    #[test]
+    fn detect_kind_git_repo() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+
+        let kind = detect_source_kind(temp.path());
+        assert_eq!(kind, SourceKind::Git);
+    }
+
+    #[test]
+    fn detect_kind_directory() {
+        let temp = tempfile::tempdir().unwrap();
+
+        let kind = detect_source_kind(temp.path());
+        assert_eq!(kind, SourceKind::Directory);
+    }
+
+    #[test]
+    fn detect_kind_git_worktree() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+
+        // 创建一个有效的 gitdir 目标
+        let worktree_target = temp.path().join("worktree.git");
+        std::fs::create_dir_all(&worktree_target).unwrap();
+
+        // 写入 .git 文件（Worktree 格式）
+        std::fs::write(&git_dir, format!("gitdir: {}", worktree_target.display())).unwrap();
+
+        let kind = detect_source_kind(temp.path());
+        assert_eq!(kind, SourceKind::Git);
+    }
+
+    #[test]
+    fn detect_kind_git_file_invalid_gitdir() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+
+        // 写入 .git 文件但 gitdir 目标不存在
+        std::fs::write(&git_dir, "gitdir: /nonexistent/path").unwrap();
+
+        let kind = detect_source_kind(temp.path());
+        assert_eq!(kind, SourceKind::Directory);
+    }
+
+    #[test]
+    fn detect_kind_git_file_no_gitdir() {
+        let temp = tempfile::tempdir().unwrap();
+        let git_dir = temp.path().join(".git");
+
+        // 写入 .git 文件但没有 gitdir 行
+        std::fs::write(&git_dir, "some other content").unwrap();
+
+        let kind = detect_source_kind(temp.path());
+        assert_eq!(kind, SourceKind::Directory);
+    }
+
     #[tokio::test]
-    async fn add_git_source() {
+    async fn add_local_source_detects_git() {
         let temp = tempfile::tempdir().unwrap();
         let git_dir = temp.path().join(".git");
         std::fs::create_dir_all(&git_dir).unwrap();
 
         let repo = Arc::new(InMemorySourceRepository::new());
-        let use_case = AddGitSource::new(repo.clone());
+        let use_case = AddLocalSource::new(repo.clone());
 
         let source = use_case
             .execute("workspace-1".to_owned(), temp.path().to_path_buf())
             .await
             .unwrap();
 
-        assert_eq!(source.kind, devforge_domain::source::SourceKind::Git);
+        assert_eq!(source.kind, SourceKind::Git);
     }
 
     #[tokio::test]
-    async fn add_directory_source() {
+    async fn add_local_source_detects_directory() {
         let temp = tempfile::tempdir().unwrap();
 
         let repo = Arc::new(InMemorySourceRepository::new());
-        let use_case = AddDirectorySource::new(repo.clone());
+        let use_case = AddLocalSource::new(repo.clone());
 
         let source = use_case
             .execute("workspace-1".to_owned(), temp.path().to_path_buf())
             .await
             .unwrap();
 
-        assert_eq!(source.kind, devforge_domain::source::SourceKind::Directory);
+        assert_eq!(source.kind, SourceKind::Directory);
     }
 
     #[tokio::test]
-    async fn add_git_source_not_git_repo_fails() {
+    async fn add_local_source_duplicate_path() {
         let temp = tempfile::tempdir().unwrap();
 
         let repo = Arc::new(InMemorySourceRepository::new());
-        let use_case = AddGitSource::new(repo.clone());
-
-        let result = use_case
-            .execute("workspace-1".to_owned(), temp.path().to_path_buf())
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn add_source_not_exists_fails() {
-        let repo = Arc::new(InMemorySourceRepository::new());
-        let use_case = AddDirectorySource::new(repo.clone());
-
-        let result = use_case
-            .execute("workspace-1".to_owned(), PathBuf::from("/nonexistent/path"))
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn add_duplicate_source_fails() {
-        let temp = tempfile::tempdir().unwrap();
-
-        let repo = Arc::new(InMemorySourceRepository::new());
-        let use_case = AddDirectorySource::new(repo.clone());
+        let use_case = AddLocalSource::new(repo.clone());
 
         // 第一次添加成功
         use_case
@@ -345,12 +457,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn add_local_source_not_exists() {
+        let repo = Arc::new(InMemorySourceRepository::new());
+        let use_case = AddLocalSource::new(repo.clone());
+
+        let result = use_case
+            .execute("workspace-1".to_owned(), PathBuf::from("/nonexistent/path"))
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
     async fn list_sources() {
         let temp1 = tempfile::tempdir().unwrap();
         let temp2 = tempfile::tempdir().unwrap();
 
         let repo = Arc::new(InMemorySourceRepository::new());
-        let add = AddDirectorySource::new(repo.clone());
+        let add = AddLocalSource::new(repo.clone());
         let list = ListSources::new(repo.clone());
 
         add.execute("workspace-1".to_owned(), temp1.path().to_path_buf())
@@ -369,7 +493,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
 
         let repo = Arc::new(InMemorySourceRepository::new());
-        let add = AddDirectorySource::new(repo.clone());
+        let add = AddLocalSource::new(repo.clone());
         let remove = RemoveSource::new(repo.clone());
         let list = ListSources::new(repo.clone());
 

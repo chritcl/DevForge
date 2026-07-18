@@ -2,7 +2,7 @@
 //!
 //! 所有文件路径操作必须通过 PathGuard 验证，防止路径逃逸攻击。
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// 路径安全错误
 #[derive(Debug, thiserror::Error)]
@@ -19,6 +19,15 @@ pub enum PathError {
     /// 路径不是目录
     #[error("路径不是目录: {0}")]
     NotDirectory(PathBuf),
+    /// 路径是绝对路径（不允许）
+    #[error("路径是绝对路径（不允许）: {0}")]
+    AbsolutePath(PathBuf),
+    /// 路径包含父目录引用（不允许）
+    #[error("路径包含父目录引用（不允许）: {0}")]
+    ParentDir(PathBuf),
+    /// 路径包含非法组件
+    #[error("路径包含非法组件: {0}")]
+    IllegalComponent(PathBuf),
     /// IO 错误
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
@@ -89,6 +98,57 @@ impl PathGuard {
     /// 将相对路径转换为绝对路径
     pub fn resolve(&self, relative: &Path) -> PathBuf {
         self.source_root.join(relative)
+    }
+
+    /// 安全解析并验证相对文件路径
+    ///
+    /// 该入口在 join 前验证 relative_path 的合法性：
+    /// 1. 拒绝绝对路径
+    /// 2. 拒绝 Windows Prefix（如 C:\、\\server\）
+    /// 3. 拒绝 RootDir（如 /）
+    /// 4. 拒绝 ParentDir（..）
+    /// 5. 拒绝空组件
+    /// 6. 将路径连接到可信 source_root
+    /// 7. canonicalize 并解析 Symlink/重解析点
+    /// 8. 验证最终路径位于可信根目录内
+    /// 9. 验证最终对象是文件
+    pub fn resolve_relative_file(&self, relative_path: &Path) -> Result<PathBuf, PathError> {
+        // 验证相对路径的每个组件
+        for component in relative_path.components() {
+            match component {
+                Component::Prefix(_) => {
+                    return Err(PathError::AbsolutePath(relative_path.to_path_buf()));
+                }
+                Component::RootDir => {
+                    return Err(PathError::AbsolutePath(relative_path.to_path_buf()));
+                }
+                Component::ParentDir => {
+                    return Err(PathError::ParentDir(relative_path.to_path_buf()));
+                }
+                Component::CurDir => {
+                    // 允许 .
+                }
+                Component::Normal(_) => {
+                    // 允许正常组件
+                }
+            }
+        }
+
+        // 连接到可信根目录
+        let full_path = self.source_root.join(relative_path);
+
+        // canonicalize 并验证
+        let canonical = Self::canonicalize(&full_path)?;
+        if !canonical.starts_with(&self.source_root) {
+            return Err(PathError::PathEscape);
+        }
+
+        // 验证是文件
+        if !canonical.is_file() {
+            return Err(PathError::NotFile(canonical));
+        }
+
+        Ok(canonical)
     }
 
     /// 规范化路径：解析 .、.. 和重复分隔符
@@ -248,5 +308,110 @@ mod tests {
 
         // 直接验证外部路径应该失败
         assert!(guard.validate(&outside).is_err());
+    }
+
+    #[test]
+    fn resolve_relative_file_rejects_absolute_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(&root).unwrap();
+
+        let guard = PathGuard::new(root.clone()).unwrap();
+
+        // 绝对路径应被拒绝
+        let result = guard.resolve_relative_file(Path::new("/etc/passwd"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_relative_file_rejects_parent_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(&root).unwrap();
+
+        let guard = PathGuard::new(root.clone()).unwrap();
+
+        // 包含 .. 的路径应被拒绝
+        let result = guard.resolve_relative_file(Path::new("../escape"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_relative_file_accepts_valid_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
+
+        let guard = PathGuard::new(root.clone()).unwrap();
+
+        // 有效相对路径应成功
+        let result = guard.resolve_relative_file(Path::new("src/main.rs"));
+        assert!(result.is_ok());
+        assert!(result.unwrap().ends_with("src/main.rs"));
+    }
+
+    #[test]
+    fn resolve_relative_file_rejects_non_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(root.join("src")).unwrap();
+
+        let guard = PathGuard::new(root.clone()).unwrap();
+
+        // 目录应被拒绝
+        let result = guard.resolve_relative_file(Path::new("src"));
+        assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_relative_file_rejects_symlink_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(root.join("src")).unwrap();
+
+        // 创建一个指向外部的文件
+        let outside_file = temp.path().join("secret.txt");
+        fs::write(&outside_file, "secret content").unwrap();
+
+        // 在 workspace 内创建指向外部文件的 symlink
+        let symlink_path = root.join("src/link.txt");
+        std::os::unix::fs::symlink(&outside_file, &symlink_path).unwrap();
+
+        let guard = PathGuard::new(root.clone()).unwrap();
+
+        // 通过 symlink 读取应被拒绝
+        let result = guard.resolve_relative_file(Path::new("src/link.txt"));
+        assert!(result.is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_relative_file_rejects_symlink_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        fs::create_dir_all(root.join("src")).unwrap();
+
+        // 创建一个指向外部的文件
+        let outside_file = temp.path().join("secret.txt");
+        fs::write(&outside_file, "secret content").unwrap();
+
+        // 在 workspace 内创建指向外部文件的 symlink
+        // 注意：Windows 上创建 symlink 需要管理员权限或开发者模式
+        let symlink_path = root.join("src/link.txt");
+        match std::os::windows::fs::symlink_file(&outside_file, &symlink_path) {
+            Ok(_) => {
+                let guard = PathGuard::new(root.clone()).unwrap();
+                // 通过 symlink 读取应被拒绝
+                let result = guard.resolve_relative_file(Path::new("src/link.txt"));
+                assert!(result.is_err());
+            }
+            Err(_) => {
+                // 无法创建 symlink（权限不足），跳过测试
+                // 人工验证：需要在管理员权限下运行此测试
+                eprintln!("跳过 symlink 测试：需要管理员权限或开发者模式");
+            }
+        }
     }
 }

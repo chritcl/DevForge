@@ -5,32 +5,20 @@ use std::path::PathBuf;
 use tauri::State;
 
 use devforge_application::source::{
-    AddDirectorySource, AddGitSource, ListSources, RemoveSource, SourceDto, SourceError,
+    AddLocalSource, ListSources, RemoveSource, SourceDto, SourceError,
 };
 
 use crate::state::AppState;
 
-/// 添加 Git 数据源
+/// 添加本地数据源（后端自动识别类型）
 #[tauri::command]
 #[specta::specta]
-pub async fn add_git_source(
+pub async fn add_local_source(
     state: State<'_, AppState>,
     workspace_id: String,
     path: String,
 ) -> Result<SourceDto, SourceError> {
-    let use_case = AddGitSource::new(state.source_repo());
-    use_case.execute(workspace_id, PathBuf::from(path)).await
-}
-
-/// 添加目录数据源
-#[tauri::command]
-#[specta::specta]
-pub async fn add_directory_source(
-    state: State<'_, AppState>,
-    workspace_id: String,
-    path: String,
-) -> Result<SourceDto, SourceError> {
-    let use_case = AddDirectorySource::new(state.source_repo());
+    let use_case = AddLocalSource::new(state.source_repo());
     use_case.execute(workspace_id, PathBuf::from(path)).await
 }
 

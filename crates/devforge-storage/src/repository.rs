@@ -1,6 +1,6 @@
 //! SQLite Repository 实现
 
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use async_trait::async_trait;
 use sqlx::SqlitePool;
@@ -434,6 +434,129 @@ impl devforge_application::discovery::DocumentRepository for SqliteDocumentRepos
             .await
             .map_err(|e| DomainError::Io(std::io::Error::other(e)))?;
         Ok(())
+    }
+
+    async fn list_file_tree(
+        &self,
+        source_id: &SourceId,
+        parent_path: Option<&str>,
+    ) -> Result<Vec<devforge_application::document::FileTreeEntry>, DomainError> {
+        // 当前实现：读取整个 Source 后投影直接子项
+        // 注意：对大型仓库存在性能缺口，后续将通过 SQL 前缀查询优化
+        let all_docs = self.list_by_source(source_id).await?;
+        let mut entries = Vec::new();
+        let mut seen_dirs = std::collections::BTreeSet::new();
+
+        for doc in &all_docs {
+            let rel = &doc.relative_path;
+
+            match parent_path {
+                Some(parent) => {
+                    // 验证 parent_path 是有效的相对路径
+                    let parent_path = std::path::Path::new(parent);
+                    // 检查是否为 parent 的直接子项
+                    if let Ok(rest) = rel.strip_prefix(parent_path) {
+                        let components: Vec<_> = rest.components().collect();
+                        if components.len() == 1 {
+                            // 直接子文件
+                            if let Component::Normal(name) = components[0] {
+                                let name = name.to_string_lossy().to_string();
+                                entries.push(devforge_application::document::FileTreeEntry {
+                                    key: devforge_application::document::FileTreeEntry::file_key(
+                                        &doc.id,
+                                    ),
+                                    source_id: doc.source_id.clone(),
+                                    relative_path: rel.clone(),
+                                    name,
+                                    entry_kind:
+                                        devforge_application::document::FileTreeEntryKind::File,
+                                    document: Some(doc.clone()),
+                                });
+                            }
+                        } else if components.len() > 1 {
+                            // 子目录
+                            if let Component::Normal(dir_name) = components[0] {
+                                let dir_name = dir_name.to_string_lossy().to_string();
+                                let dir_rel = std::path::PathBuf::from(parent).join(&dir_name);
+                                let dir_key =
+                                    devforge_application::document::FileTreeEntry::directory_key(
+                                        source_id, &dir_rel,
+                                    );
+                                if seen_dirs.insert(dir_key.clone()) {
+                                    entries.push(devforge_application::document::FileTreeEntry {
+                                        key: dir_key,
+                                        source_id: source_id.clone(),
+                                        relative_path: dir_rel,
+                                        name: dir_name,
+                                        entry_kind: devforge_application::document::FileTreeEntryKind::Directory,
+                                        document: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                None => {
+                    // 根目录
+                    let components: Vec<_> = rel.components().collect();
+                    if components.len() == 1 {
+                        // 根目录文件
+                        if let Component::Normal(name) = components[0] {
+                            let name = name.to_string_lossy().to_string();
+                            entries.push(devforge_application::document::FileTreeEntry {
+                                key: devforge_application::document::FileTreeEntry::file_key(
+                                    &doc.id,
+                                ),
+                                source_id: doc.source_id.clone(),
+                                relative_path: rel.clone(),
+                                name,
+                                entry_kind: devforge_application::document::FileTreeEntryKind::File,
+                                document: Some(doc.clone()),
+                            });
+                        }
+                    } else if components.len() > 1 {
+                        // 第一层目录
+                        if let Component::Normal(dir_name) = components[0] {
+                            let dir_name = dir_name.to_string_lossy().to_string();
+                            let dir_rel = std::path::PathBuf::from(&dir_name);
+                            let dir_key =
+                                devforge_application::document::FileTreeEntry::directory_key(
+                                    source_id, &dir_rel,
+                                );
+                            if seen_dirs.insert(dir_key.clone()) {
+                                entries.push(devforge_application::document::FileTreeEntry {
+                                    key: dir_key,
+                                    source_id: source_id.clone(),
+                                    relative_path: dir_rel,
+                                    name: dir_name,
+                                    entry_kind: devforge_application::document::FileTreeEntryKind::Directory,
+                                    document: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 排序：目录在前，文件在后，同类按名称排序（Windows 大小写不敏感）
+        entries.sort_by(|a, b| match (&a.entry_kind, &b.entry_kind) {
+            (
+                devforge_application::document::FileTreeEntryKind::Directory,
+                devforge_application::document::FileTreeEntryKind::File,
+            ) => std::cmp::Ordering::Less,
+            (
+                devforge_application::document::FileTreeEntryKind::File,
+                devforge_application::document::FileTreeEntryKind::Directory,
+            ) => std::cmp::Ordering::Greater,
+            _ => a
+                .name
+                .to_lowercase()
+                .cmp(&b.name.to_lowercase())
+                .then_with(|| a.name.cmp(&b.name)),
+        });
+
+        Ok(entries)
     }
 }
 

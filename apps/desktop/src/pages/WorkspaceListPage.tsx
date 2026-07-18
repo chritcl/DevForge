@@ -62,7 +62,7 @@ export function WorkspaceListPage() {
           >
             <div className="workspace-card-header">
               <h2>{workspace.name}</h2>
-              {workspace.status === "Archived" && (
+              {workspace.status === "archived" && (
                 <span className="workspace-archived-badge">已归档</span>
               )}
             </div>

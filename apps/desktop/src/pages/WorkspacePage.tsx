@@ -3,12 +3,12 @@ import { useParams } from "react-router";
 import { useWorkspace, useMarkWorkspaceOpened } from "../hooks/useWorkspaces";
 import { useSources } from "../hooks/useSources";
 import { useTabs, useOpenTab, useCloseTab, useSetActiveTab } from "../hooks/useTabs";
-import { useDocuments } from "../hooks/useDocuments";
+import { useDocumentsByIds } from "../hooks/useDocuments";
 import { FileTree } from "../components/FileTree";
 import { FileViewer } from "../components/FileViewer";
 import { TabBar } from "../components/TabBar";
 import { AddSourceDialog } from "../components/AddSourceDialog";
-import type { DocumentDto } from "../types";
+import type { DocumentDto, DocumentLookupDto } from "../bindings";
 
 export function WorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -33,52 +33,36 @@ export function WorkspacePage() {
     }
   }, [workspaceId, markOpened]);
 
+  // 批量获取标签对应的文档信息（一次 IPC）
+  const documentIds = useMemo(
+    () => tabs?.map((t) => t.document_id) ?? [],
+    [tabs]
+  );
+  const { data: lookups } = useDocumentsByIds(documentIds);
+
+  // 构建查找结果 Map
+  const documentLookupMap = useMemo(() => {
+    const map = new Map<string, DocumentLookupDto>();
+    lookups?.forEach((lookup) => map.set(lookup.document_id, lookup));
+    return map;
+  }, [lookups]);
+
   // 恢复活动标签（从已保存的标签中恢复）
   useEffect(() => {
     if (tabs && tabs.length > 0 && !activeTabId) {
-      const activeTab = tabs.find((t) => t.is_active);
-      if (activeTab) {
-        setActiveTabId(activeTab.id);
-      } else {
-        setActiveTabId(tabs[0].id);
-      }
+      const activeTab = tabs.find((t) => t.is_active) ?? tabs[0];
+      setActiveTabId(activeTab.id);
     }
   }, [tabs, activeTabId]);
-
-  // 收集所有需要查询文档的 source ID
-  const sourceIds = useMemo(
-    () => sources?.map((s) => s.id) ?? [],
-    [sources]
-  );
-
-  // 查询所有 source 的文档以获取标签对应的文档信息
-  const { data: allDocs1 } = useDocuments(sourceIds[0] ?? "", undefined);
-  const { data: allDocs2 } = useDocuments(sourceIds[1] ?? "", undefined);
-  const { data: allDocs3 } = useDocuments(sourceIds[2] ?? "", undefined);
-
-  // 构建文档映射
-  const documentMap = useMemo(() => {
-    const map = new Map<string, DocumentDto>();
-    [allDocs1, allDocs2, allDocs3].forEach((docs) => {
-      docs?.forEach((doc) => map.set(doc.id, doc));
-    });
-    return map;
-  }, [allDocs1, allDocs2, allDocs3]);
 
   // 找到当前活动标签对应的文档
   const activeDocument = useMemo(() => {
     if (!activeTabId || !tabs) return null;
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab) return null;
-    return documentMap.get(activeTab.document_id) ?? null;
-  }, [activeTabId, tabs, documentMap]);
-
-  // 找到活动文档对应的 source root
-  const activeSourceRoot = useMemo(() => {
-    if (!activeDocument) return "";
-    const source = sources?.find((s) => s.id === activeDocument.source_id);
-    return source?.root_path ?? "";
-  }, [activeDocument, sources]);
+    const lookup = documentLookupMap.get(activeTab.document_id);
+    return lookup?.status === "found" ? lookup.document : null;
+  }, [activeTabId, tabs, documentLookupMap]);
 
   // 处理文件选择
   const handleFileSelect = useCallback(
@@ -184,7 +168,6 @@ export function WorkspacePage() {
                 key={source.id}
                 sourceId={source.id}
                 sourceName={source.name}
-                sourceRoot={source.root_path}
                 onFileSelect={handleFileSelect}
               />
             ))}
@@ -205,17 +188,14 @@ export function WorkspacePage() {
         <div className="workspace-main">
           <TabBar
             tabs={tabs ?? []}
-            documents={documentMap}
+            documentLookups={documentLookupMap}
             activeTabId={activeTabId}
             onTabClick={handleTabClick}
             onTabClose={handleTabClose}
           />
 
           {activeDocument ? (
-            <FileViewer
-              document={activeDocument}
-              sourceRoot={activeSourceRoot}
-            />
+            <FileViewer document={activeDocument} />
           ) : (
             <div className="workspace-welcome">
               <div className="workspace-welcome-icon">📁</div>

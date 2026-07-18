@@ -9,6 +9,8 @@ use devforge_domain::error::DomainError;
 use devforge_domain::path_guard::PathGuard;
 use devforge_domain::source::SourceId;
 
+use crate::document::FileTreeEntry;
+
 /// Document Repository Trait（应用层端口）
 #[async_trait::async_trait]
 pub trait DocumentRepository: Send + Sync {
@@ -22,6 +24,19 @@ pub trait DocumentRepository: Send + Sync {
     ) -> Result<Vec<Document>, DomainError>;
     async fn upsert(&self, document: &Document) -> Result<(), DomainError>;
     async fn delete_by_source(&self, source_id: &SourceId) -> Result<(), DomainError>;
+
+    /// 列出文件树条目
+    ///
+    /// 返回 parent_path 的直接子项。目录在前，文件在后。
+    /// 目录 key 唯一且稳定。文件使用真实 Document ID。
+    ///
+    /// 注意：当前实现读取整个 Source 后投影直接子项，
+    /// 对大型仓库存在性能缺口。后续将通过 SQL 前缀查询优化。
+    async fn list_file_tree(
+        &self,
+        source_id: &SourceId,
+        parent_path: Option<&str>,
+    ) -> Result<Vec<FileTreeEntry>, DomainError>;
 }
 
 /// 扫描结果
@@ -548,6 +563,15 @@ mod tests {
                 let mut docs = self.docs.lock().unwrap();
                 docs.retain(|_, d| d.source_id != *source_id);
                 Ok(())
+            }
+
+            async fn list_file_tree(
+                &self,
+                _source_id: &SourceId,
+                _parent_path: Option<&str>,
+            ) -> Result<Vec<crate::document::FileTreeEntry>, DomainError> {
+                // 简化实现，仅用于测试
+                Ok(Vec::new())
             }
         }
 

@@ -1,9 +1,9 @@
-import type { TabDto } from "../hooks/useTabs";
-import type { DocumentDto } from "../types";
+import type { TabDto } from "../types";
+import type { DocumentLookupDto } from "../bindings";
 
 interface TabBarProps {
   tabs: TabDto[];
-  documents: Map<string, DocumentDto>;
+  documentLookups: Map<string, DocumentLookupDto>;
   activeTabId: string | null;
   onTabClick: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
@@ -11,7 +11,7 @@ interface TabBarProps {
 
 export function TabBar({
   tabs,
-  documents,
+  documentLookups,
   activeTabId,
   onTabClick,
   onTabClose,
@@ -23,21 +23,25 @@ export function TabBar({
   return (
     <div className="tab-bar">
       {tabs.map((tab) => {
-        const doc = documents.get(tab.document_id);
+        const lookup = documentLookups.get(tab.document_id);
+        const doc = lookup?.status === "found" ? lookup.document : null;
+        const isAvailable = lookup?.status === "found";
         const fileName = doc
           ? doc.relative_path.split(/[/\\]/).pop() ?? doc.relative_path
-          : "未知文件";
+          : isAvailable
+            ? "未知文件"
+            : "文件不可用";
         const isActive = tab.id === activeTabId;
-        const isSensitive = doc?.sensitivity === "Sensitive";
+        const isSensitive = doc?.sensitivity === "sensitive";
 
         return (
           <div
             key={tab.id}
-            className={`tab-item ${isActive ? "tab-item-active" : ""}`}
+            className={`tab-item ${isActive ? "tab-item-active" : ""} ${!isAvailable ? "tab-item-unavailable" : ""}`}
             onClick={() => onTabClick(tab.id)}
           >
             <span className="tab-item-icon">
-              {getFileIcon(doc?.kind ?? "unknown")}
+              {isAvailable ? getFileIcon(doc?.kind ?? "unknown") : "❓"}
             </span>
             <span className="tab-item-name">
               {fileName}

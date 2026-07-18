@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useAddDirectorySource, useScanSource } from "../hooks/useSources";
+import { useAddLocalSource, useScanSource } from "../hooks/useSources";
 
 interface AddSourceDialogProps {
   workspaceId: string;
@@ -10,7 +10,7 @@ interface AddSourceDialogProps {
 export function AddSourceDialog({ workspaceId, onClose }: AddSourceDialogProps) {
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const addDirectorySource = useAddDirectorySource();
+  const addLocalSource = useAddLocalSource();
   const scanSource = useScanSource();
 
   const handleSelectDirectory = async () => {
@@ -30,7 +30,7 @@ export function AddSourceDialog({ workspaceId, onClose }: AddSourceDialogProps) 
       const path = selected as string;
 
       // 添加数据源（后端会自动检测是 Git 仓库还是普通目录）
-      const source = await addDirectorySource.mutateAsync({
+      const source = await addLocalSource.mutateAsync({
         workspace_id: workspaceId,
         path,
       });

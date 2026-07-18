@@ -1,20 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace } from "../types";
+import type { WorkspaceDto } from "../bindings";
 
 // 工作区相关 Hook
 
 export function useWorkspaces() {
   return useQuery({
     queryKey: ["workspaces"],
-    queryFn: () => invoke<Workspace[]>("list_workspaces"),
+    queryFn: () => invoke<WorkspaceDto[]>("list_workspaces"),
   });
 }
 
 export function useWorkspace(id: string) {
   return useQuery({
     queryKey: ["workspace", id],
-    queryFn: () => invoke<Workspace>("get_workspace", { id }),
+    queryFn: () => invoke<WorkspaceDto>("get_workspace", { id }),
     enabled: !!id,
   });
 }
@@ -23,7 +23,7 @@ export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (params: { name: string; description?: string }) =>
-      invoke<Workspace>("create_workspace", params),
+      invoke<WorkspaceDto>("create_workspace", params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
@@ -37,7 +37,7 @@ export function useUpdateWorkspace() {
       id: string;
       name?: string;
       description?: string | null;
-    }) => invoke<Workspace>("update_workspace", params),
+    }) => invoke<WorkspaceDto>("update_workspace", params),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       queryClient.invalidateQueries({ queryKey: ["workspace", variables.id] });

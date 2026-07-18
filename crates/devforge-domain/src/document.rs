@@ -32,7 +32,8 @@ impl std::fmt::Display for DocumentId {
 }
 
 /// 文档类型
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
 pub enum DocumentKind {
     /// 文本文件
     Text,
@@ -96,7 +97,8 @@ impl DocumentKind {
 }
 
 /// 敏感度
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
 pub enum Sensitivity {
     /// 普通文件
     Normal,

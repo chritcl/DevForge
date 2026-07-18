@@ -1,15 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-
-// 标签页类型
-export type TabDto = {
-  id: string;
-  workspace_id: string;
-  document_id: string;
-  position: number;
-  is_active: boolean;
-  opened_at: string;
-};
+import type { TabDto } from "../types";
 
 // 标签页相关 Hook
 

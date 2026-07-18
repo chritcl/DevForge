@@ -28,24 +28,37 @@
 
 | 能力 | 文档状态 | 代码入口 | 测试证据 | 当前状态 |
 |------|----------|----------|----------|----------|
-| Domain 模型 | 已实现 | crates/devforge-domain | 29 unit tests | VERIFIED |
-| SQLite Schema | 已实现 | crates/devforge-storage/migrations | 9 tests | VERIFIED |
+| Domain 模型 | 已实现 | crates/devforge-domain | 34 unit tests | VERIFIED |
+| SQLite Schema | 已实现 | crates/devforge-storage/migrations | 5 integration tests | VERIFIED |
 | Repository 层 | 已实现 | crates/devforge-storage/src/repository.rs | 4 integration tests | VERIFIED |
 | Workspace CRUD 用例 | 已实现 | crates/devforge-application/src/workspace.rs | 7 unit tests | VERIFIED |
 | Workspace Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/workspace.rs | 9 commands | VERIFIED |
-| PathGuard 路径安全 | 已实现 | crates/devforge-domain/src/path_guard.rs | 10 unit tests | VERIFIED |
-| Source CRUD 用例 | 已实现 | crates/devforge-application/src/source.rs | 7 unit tests | VERIFIED |
-| Source Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/source.rs | 4 commands | VERIFIED |
+| PathGuard 路径安全 | 已实现 | crates/devforge-domain/src/path_guard.rs | 15 unit tests | VERIFIED |
+| Source 自动识别 | 已实现 | crates/devforge-application/src/source.rs | 10 unit tests | VERIFIED |
+| Source Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/source.rs | 3 commands | VERIFIED |
 | 文件发现用例 | 已实现 | crates/devforge-application/src/discovery.rs | 7 unit tests | VERIFIED |
 | 文件发现 Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/discovery.rs | 1 command | VERIFIED |
-| 文档查询用例 | 已实现 | crates/devforge-application/src/document.rs | 3 unit tests | VERIFIED |
-| 文档 Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/document.rs | 2 commands | VERIFIED |
+| 文档查询用例 | 已实现 | crates/devforge-application/src/document.rs | 12 unit tests | VERIFIED |
+| 文件树查询用例 | 已实现 | crates/devforge-application/src/document.rs | 12 unit tests | VERIFIED |
+| 文档 Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/document.rs | 4 commands | VERIFIED |
 | 标签页用例 | 已实现 | crates/devforge-application/src/tab.rs | 5 unit tests | VERIFIED |
 | 标签页 Tauri 命令 | 已实现 | apps/desktop/src-tauri/src/commands/tab.rs | 4 commands | VERIFIED |
 | 添加数据源 UI | 已实现 | apps/desktop/src/components/AddSourceDialog.tsx | 前端测试通过 | IMPLEMENTED |
-| 懒加载文件树 | 已实现 | apps/desktop/src/components/FileTree.tsx | 前端测试通过 | IMPLEMENTED |
+| 文件树组件 | 已实现 | apps/desktop/src/components/FileTree.tsx | 前端测试通过 | IMPLEMENTED |
+| 文件查看器组件 | 已实现 | apps/desktop/src/components/FileViewer.tsx | 前端测试通过 | IMPLEMENTED |
 | 标签栏组件 | 已实现 | apps/desktop/src/components/TabBar.tsx | 前端测试通过 | IMPLEMENTED |
 | 启动恢复逻辑 | 已实现 | apps/desktop/src/pages/WorkspacePage.tsx | 前端测试通过 | IMPLEMENTED |
+
+### Phase 1A - 安全修复与深层文件支持
+
+| 能力 | 文档状态 | 代码入口 | 测试证据 | 当前状态 |
+|------|----------|----------|----------|----------|
+| read_document_content 安全修复 | 已实现 | crates/devforge-application/src/document.rs | 安全测试通过 | IMPLEMENTED |
+| add_local_source 自动识别 | 已实现 | crates/devforge-application/src/source.rs | 识别测试通过 | IMPLEMENTED |
+| 文件树显式查询模型 | 已实现 | crates/devforge-application/src/document.rs | 文件树测试通过 | IMPLEMENTED |
+| 标签批量恢复 | 已实现 | crates/devforge-application/src/document.rs | 批量查询测试通过 | IMPLEMENTED |
+| Sensitivity 强类型 | 已实现 | crates/devforge-domain/src/document.rs | Specta 生成 | IMPLEMENTED |
+| bindings.ts 更新 | 已实现 | apps/desktop/src/bindings.ts | 21 commands | IMPLEMENTED |
 
 ### Phase 2+ - 未开始
 
@@ -59,6 +72,38 @@
 | Phase 7 | Plugins | NOT STARTED | 插件系统 |
 | Phase 8 | Release | NOT STARTED | 发布、自动更新、代码签名 |
 
+## Phase 1A 修复内容
+
+### 安全修复
+- 移除 `read_document_content` 的 `source_root` 参数
+- 后端从数据库反查可信 `source.root_path`
+- PathGuard 新增 `resolve_relative_file` 安全入口
+- join 前验证路径组件（拒绝绝对路径、ParentDir、Prefix）
+- join 后 canonicalize 并验证位于可信根目录内
+
+### 数据源自动识别
+- 新增 `add_local_source` 统一入口
+- 后端自动识别 Git 仓库、Git Worktree、普通目录
+- 删除旧的 `add_git_source` 和 `add_directory_source` IPC 命令
+- 路径规范化和重复检测使用 canonicalize 后的路径
+
+### 文件树显式查询模型
+- 新增 `FileTreeEntry`、`FileTreeEntryDto`、`FileTreeEntryKind`
+- 目录不是 Document，没有伪造的 document_id
+- 文件条目使用真实 Document ID
+- 使用 `Path::strip_prefix` 组件级判断，不使用字符串前缀匹配
+
+### 标签批量恢复
+- 新增 `get_documents_by_ids` 批量查询
+- 支持任意数量数据源和任意目录深度
+- 失效标签显示"文件不可用"，不自动关闭
+- 空 ID 列表不发起 IPC
+
+### 敏感度强类型
+- `DocumentKind` 和 `Sensitivity` 枚举添加 Specta + serde(rename_all = "snake_case")
+- 前端不再手写字符串枚举
+- 修复 Sensitivity 大小写不匹配 Bug
+
 ## 已修复的问题
 
 ### P0 - 数据损坏（已修复）
@@ -66,7 +111,7 @@
 - removed 计数不更新数据库：已删除文件现在标记为 content_readable = false
 
 ### P1 - 主流程不可用（已修复）
-- Specta 绑定不完整：所有 19 个命令已注册到 Specta
+- Specta 绑定不完整：所有 21 个命令已注册到 Specta
 - 无添加数据源 UI：已创建 AddSourceDialog 组件
 - 文件树非懒加载：已重写为使用 parentPath 懒加载
 - 无启动恢复逻辑：WorkspacePage 现在在挂载时恢复标签
@@ -76,6 +121,14 @@
 
 ### P2 - 测试和可维护性（已修复）
 - list_documents 查询逻辑缺陷：已实现 list_by_source_and_parent
+
+### P3 - 安全和深层文件（Phase 1A 已修复）
+- source_root 参数不受信：已移除，后端从数据库反查
+- 深层文件无法导航：已实现文件树显式查询模型
+- 标签恢复依赖根目录列表：已实现批量查询
+- 硬编码三个数据源：已移除限制
+- Sensitivity 大小写不匹配：已修复为 snake_case
+- bindings.ts 过期：已重新生成
 
 ## 验证命令记录
 
@@ -87,7 +140,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 通过
 
 cargo test --workspace
-- 通过（42 tests）
+- 通过（82 tests）
 
 pnpm typecheck
 - 通过
@@ -96,9 +149,20 @@ pnpm test
 - 通过（5 tests）
 ```
 
+## 剩余 Phase 1 缺口
+
+以下功能尚未实现，不标记为完成：
+
+- 工作区编辑、归档、恢复和删除 UI
+- 数据源移除 UI
+- Monaco Editor
+- Markdown 渲染器
+- 文件监听与增量刷新
+- workspace_settings 的真实使用
+- 大目录分页（当前不设上限，性能风险已记录）
+- 扫描事务和后台任务模型
+
 ## 基线信息
 
-- 分支：fix/phase-1-vertical-slice
-- 起始 HEAD：0e9aeb3
-- 当前 HEAD：b24dbf4
-- 基线检查：全部通过
+- 分支：main
+- 当前 HEAD：c01649c

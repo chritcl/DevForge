@@ -4,36 +4,199 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-	/**
-	 *  获取应用信息
-	 * 
-	 *  AppHandle 由 Tauri 注入，不出现在生成的 TypeScript 参数中。
-	 *  AppState 已由 Composition Root 注册为 managed state。
-	 */
-	getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
+  getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
+  createWorkspace: (name: string, description: string | null) =>
+    __TAURI_INVOKE<WorkspaceDto>("create_workspace", { name, description }),
+  getWorkspace: (id: string) =>
+    __TAURI_INVOKE<WorkspaceDto>("get_workspace", { id }),
+  listWorkspaces: () => __TAURI_INVOKE<WorkspaceDto[]>("list_workspaces"),
+  updateWorkspace: (
+    id: string,
+    name: string | null,
+    description: string | null | null
+  ) =>
+    __TAURI_INVOKE<WorkspaceDto>("update_workspace", {
+      id,
+      name,
+      description,
+    }),
+  archiveWorkspace: (id: string) =>
+    __TAURI_INVOKE<void>("archive_workspace", { id }),
+  restoreWorkspace: (id: string) =>
+    __TAURI_INVOKE<void>("restore_workspace", { id }),
+  deleteWorkspace: (id: string) =>
+    __TAURI_INVOKE<void>("delete_workspace", { id }),
+  markWorkspaceOpened: (id: string) =>
+    __TAURI_INVOKE<void>("mark_workspace_opened", { id }),
+  addLocalSource: (workspaceId: string, path: string) =>
+    __TAURI_INVOKE<SourceDto>("add_local_source", {
+      workspace_id: workspaceId,
+      path,
+    }),
+  listSources: (workspaceId: string) =>
+    __TAURI_INVOKE<SourceDto[]>("list_sources", { workspace_id: workspaceId }),
+  removeSource: (id: string) =>
+    __TAURI_INVOKE<void>("remove_source", { id }),
+  scanSource: (sourceId: string, rootPath: string) =>
+    __TAURI_INVOKE<ScanResult>("scan_source", {
+      source_id: sourceId,
+      root_path: rootPath,
+    }),
+  listDocuments: (sourceId: string, parentPath: string | null) =>
+    __TAURI_INVOKE<DocumentDto[]>("list_documents", {
+      source_id: sourceId,
+      parent_path: parentPath,
+    }),
+  listFileTree: (sourceId: string, parentPath: string | null) =>
+    __TAURI_INVOKE<FileTreeEntryDto[]>("list_file_tree", {
+      source_id: sourceId,
+      parent_path: parentPath,
+    }),
+  readDocumentContent: (documentId: string) =>
+    __TAURI_INVOKE<string>("read_document_content", {
+      document_id: documentId,
+    }),
+  getDocumentsByIds: (documentIds: string[]) =>
+    __TAURI_INVOKE<DocumentLookupDto[]>("get_documents_by_ids", {
+      document_ids: documentIds,
+    }),
+  openTab: (workspaceId: string, documentId: string) =>
+    __TAURI_INVOKE<TabDto>("open_tab", {
+      workspace_id: workspaceId,
+      document_id: documentId,
+    }),
+  closeTab: (id: string) => __TAURI_INVOKE<void>("close_tab", { id }),
+  listTabs: (workspaceId: string) =>
+    __TAURI_INVOKE<TabDto[]>("list_tabs", { workspace_id: workspaceId }),
+  setActiveTab: (workspaceId: string, tabId: string) =>
+    __TAURI_INVOKE<void>("set_active_tab", {
+      workspace_id: workspaceId,
+      tab_id: tabId,
+    }),
 };
 
-/* Types */
-/**
- *  应用基础信息（诊断 DTO，IPC 输出）
- * 
- *  由 GetAppInfo Use Case 组合 AppMetadata + DbStatus 生成。
- *  derive Type 用于 specta 自动生成 TypeScript 类型。
- *  仅派生 Serialize（IPC 输出），不派生 Deserialize。
- */
+/** Types */
 export type AppInfo = {
-	version: string,
-	data_dir: string,
-	db_status: DbStatus,
+  version: string;
+  data_dir: string;
+  db_status: DbStatus;
 };
 
-/**
- *  数据库状态
- * 
- *  `#[serde(tag = "type")]` 使 serde 生成内部标签表示：
- *  `{ "type": "NotInitialized" } | { "type": "Ready", "migration_version": 1 } | ...`
- *  specta 尊重 serde 标签策略，生成对应的 TypeScript tagged union。
- *  仅派生 Serialize（IPC 输出），不无意义地派生 Deserialize。
- */
-export type DbStatus = { type: "NotInitialized" } | { type: "Ready"; migration_version: number } | { type: "Error"; message: string };
+export type DbStatus =
+  | { type: "NotInitialized" }
+  | { type: "Ready"; migration_version: number }
+  | { type: "Error"; message: string };
 
+export type WorkspaceDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: WorkspaceStatus;
+  created_at: string;
+  updated_at: string;
+  last_opened_at: string | null;
+};
+
+export type WorkspaceStatus = "active" | "archived";
+
+export type SourceDto = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  root_path: string;
+  kind: SourceKind;
+  created_at: string;
+};
+
+export type SourceKind = "git" | "directory";
+
+export type DocumentDto = {
+  id: string;
+  source_id: string;
+  relative_path: string;
+  kind: DocumentKind;
+  size: number;
+  sensitivity: Sensitivity;
+  content_readable: boolean;
+};
+
+export type DocumentKind =
+  | "text"
+  | "markdown"
+  | "image"
+  | "binary"
+  | "unknown";
+
+export type Sensitivity = "normal" | "sensitive";
+
+export type FileTreeEntryDto = {
+  key: string;
+  source_id: string;
+  relative_path: string;
+  name: string;
+  entry_kind: FileTreeEntryKind;
+  document: DocumentDto | null;
+};
+
+export type FileTreeEntryKind = "directory" | "file";
+
+export type DocumentLookupDto = {
+  document_id: string;
+  status: DocumentLookupStatus;
+  document: DocumentDto | null;
+};
+
+export type DocumentLookupStatus =
+  | "found"
+  | "document_missing"
+  | "source_missing"
+  | "file_missing"
+  | "path_invalid";
+
+export type ScanResult = {
+  added: number;
+  updated: number;
+  removed: number;
+  skipped: number;
+};
+
+export type TabDto = {
+  id: string;
+  workspace_id: string;
+  document_id: string;
+  position: number;
+  is_active: boolean;
+  opened_at: string;
+};
+
+export type AppError =
+  | { Domain: string }
+  | "WorkspaceNotFound"
+  | "DuplicateName";
+
+export type SourceError =
+  | { Path: string }
+  | "SourceNotFound"
+  | "PathAlreadyExists"
+  | { PathNotExists: string }
+  | { NotDirectory: string }
+  | { PermissionDenied: string }
+  | { NotGitRepository: string }
+  | { Domain: string };
+
+export type DocumentError =
+  | "DocumentNotFound"
+  | "SourceNotFound"
+  | "SensitiveFile"
+  | "FileTooLarge"
+  | { Path: string }
+  | { Io: string }
+  | { Domain: string };
+
+export type TabError = "TabNotFound" | { Domain: string };
+
+export type DiscoveryError =
+  | "SourceNotFound"
+  | { Path: string }
+  | { Io: string }
+  | { Domain: string };

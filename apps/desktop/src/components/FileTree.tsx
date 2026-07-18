@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { useDocuments } from "../hooks/useDocuments";
-import type { DocumentDto } from "../types";
+import { useFileTree } from "../hooks/useDocuments";
+import type { DocumentDto, FileTreeEntryDto } from "../bindings";
 
 interface FileTreeProps {
   sourceId: string;
   sourceName: string;
-  sourceRoot: string;
   onFileSelect: (doc: DocumentDto) => void;
 }
 
@@ -50,7 +49,7 @@ function FileTreeDirectory({
   parentPath,
   onFileSelect,
 }: FileTreeDirectoryProps) {
-  const { data: items, isLoading, error } = useDocuments(sourceId, parentPath ?? undefined);
+  const { data: items, isLoading, error } = useFileTree(sourceId, parentPath ?? undefined);
 
   if (isLoading) {
     return (
@@ -74,45 +73,36 @@ function FileTreeDirectory({
     );
   }
 
-  // 分离目录和文件
-  // 目录条目的特征：kind 为 "unknown" 且 content_readable 为 false 且 size 为 0
-  const dirs = items.filter(
-    (item) => item.kind === "unknown" && !item.content_readable && item.size === 0
-  );
-  const files = items.filter(
-    (item) => !(item.kind === "unknown" && !item.content_readable && item.size === 0)
-  );
-
   return (
     <>
-      {dirs.map((dir) => (
-        <FileTreeDirItem
-          key={dir.id}
-          dir={dir}
-          sourceId={sourceId}
-          onFileSelect={onFileSelect}
-        />
-      ))}
-      {files.map((file) => (
-        <FileTreeFileItem
-          key={file.id}
-          doc={file}
-          onFileSelect={onFileSelect}
-        />
-      ))}
+      {items.map((entry) =>
+        entry.entry_kind === "directory" ? (
+          <FileTreeDirItem
+            key={entry.key}
+            entry={entry}
+            sourceId={sourceId}
+            onFileSelect={onFileSelect}
+          />
+        ) : (
+          <FileTreeFileItem
+            key={entry.key}
+            entry={entry}
+            onFileSelect={onFileSelect}
+          />
+        )
+      )}
     </>
   );
 }
 
 interface FileTreeDirItemProps {
-  dir: DocumentDto;
+  entry: FileTreeEntryDto;
   sourceId: string;
   onFileSelect: (doc: DocumentDto) => void;
 }
 
-function FileTreeDirItem({ dir, sourceId, onFileSelect }: FileTreeDirItemProps) {
+function FileTreeDirItem({ entry, sourceId, onFileSelect }: FileTreeDirItemProps) {
   const [expanded, setExpanded] = useState(false);
-  const dirName = dir.relative_path.split(/[/\\]/).pop() ?? dir.relative_path;
 
   return (
     <div className="file-tree-dir">
@@ -121,14 +111,14 @@ function FileTreeDirItem({ dir, sourceId, onFileSelect }: FileTreeDirItemProps) 
         onClick={() => setExpanded(!expanded)}
       >
         <span className="file-tree-icon">{expanded ? "📂" : "📁"}</span>
-        <span className="file-tree-name">{dirName}</span>
+        <span className="file-tree-name">{entry.name}</span>
       </div>
 
       {expanded && (
         <div className="file-tree-dir-content">
           <FileTreeDirectory
             sourceId={sourceId}
-            parentPath={dir.relative_path}
+            parentPath={entry.relative_path}
             onFileSelect={onFileSelect}
           />
         </div>
@@ -138,13 +128,13 @@ function FileTreeDirItem({ dir, sourceId, onFileSelect }: FileTreeDirItemProps) 
 }
 
 interface FileTreeFileItemProps {
-  doc: DocumentDto;
+  entry: FileTreeEntryDto;
   onFileSelect: (doc: DocumentDto) => void;
 }
 
-function FileTreeFileItem({ doc, onFileSelect }: FileTreeFileItemProps) {
-  const fileName =
-    doc.relative_path.split(/[/\\]/).pop() ?? doc.relative_path;
+function FileTreeFileItem({ entry, onFileSelect }: FileTreeFileItemProps) {
+  const doc = entry.document;
+  if (!doc) return null;
 
   const getFileIcon = (kind: string) => {
     switch (kind) {
@@ -161,7 +151,7 @@ function FileTreeFileItem({ doc, onFileSelect }: FileTreeFileItemProps) {
     }
   };
 
-  const isSensitive = doc.sensitivity === "Sensitive";
+  const isSensitive = doc.sensitivity === "sensitive";
 
   return (
     <div
@@ -169,7 +159,7 @@ function FileTreeFileItem({ doc, onFileSelect }: FileTreeFileItemProps) {
       onClick={() => onFileSelect(doc)}
     >
       <span className="file-tree-icon">{getFileIcon(doc.kind)}</span>
-      <span className="file-tree-name">{fileName}</span>
+      <span className="file-tree-name">{entry.name}</span>
       {isSensitive && <span className="file-tree-sensitive-badge">🔒</span>}
     </div>
   );

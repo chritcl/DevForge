@@ -1,17 +1,55 @@
 import { useDocumentContent } from "../hooks/useDocuments";
-import type { DocumentDto } from "../types";
+import type { DocumentDto } from "../bindings";
 
 interface FileViewerProps {
   document: DocumentDto;
-  sourceRoot: string;
 }
 
-export function FileViewer({ document, sourceRoot }: FileViewerProps) {
+export function FileViewer({ document }: FileViewerProps) {
   const {
     data: content,
     isLoading,
     error,
-  } = useDocumentContent(document.id, sourceRoot);
+  } = useDocumentContent(document.id, document);
+
+  // 敏感文件（UI 判断，后端仍会拒绝）
+  if (document.sensitivity === "sensitive") {
+    return (
+      <div className="file-viewer-sensitive">
+        <div className="file-viewer-sensitive-icon">🔒</div>
+        <div className="file-viewer-sensitive-title">敏感文件</div>
+        <div className="file-viewer-sensitive-message">
+          此文件包含敏感内容（如密钥、密码等），默认不显示内容。
+        </div>
+      </div>
+    );
+  }
+
+  // 二进制文件
+  if (document.kind === "binary") {
+    return (
+      <div className="file-viewer-binary">
+        <div className="file-viewer-binary-icon">⚙️</div>
+        <div className="file-viewer-binary-title">二进制文件</div>
+        <div className="file-viewer-binary-message">
+          此文件是二进制文件，无法以文本形式显示。
+        </div>
+      </div>
+    );
+  }
+
+  // 不可读文件
+  if (!document.content_readable) {
+    return (
+      <div className="file-viewer-binary">
+        <div className="file-viewer-binary-icon">⚙️</div>
+        <div className="file-viewer-binary-title">不可读文件</div>
+        <div className="file-viewer-binary-message">
+          此文件无法以文本形式显示。
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -25,32 +63,6 @@ export function FileViewer({ document, sourceRoot }: FileViewerProps) {
     return (
       <div className="file-viewer-error">
         <span>加载失败: {String(error)}</span>
-      </div>
-    );
-  }
-
-  // 敏感文件
-  if (document.sensitivity === "Sensitive") {
-    return (
-      <div className="file-viewer-sensitive">
-        <div className="file-viewer-sensitive-icon">🔒</div>
-        <div className="file-viewer-sensitive-title">敏感文件</div>
-        <div className="file-viewer-sensitive-message">
-          此文件包含敏感内容（如密钥、密码等），默认不显示内容。
-        </div>
-      </div>
-    );
-  }
-
-  // 不可读文件
-  if (!document.content_readable) {
-    return (
-      <div className="file-viewer-binary">
-        <div className="file-viewer-binary-icon">⚙️</div>
-        <div className="file-viewer-binary-title">二进制文件</div>
-        <div className="file-viewer-binary-message">
-          此文件是二进制文件，无法以文本形式显示。
-        </div>
       </div>
     );
   }
