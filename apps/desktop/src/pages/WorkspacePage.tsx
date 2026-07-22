@@ -13,6 +13,7 @@ import { FileTree } from "../components/FileTree";
 import { FileViewer } from "../components/FileViewer";
 import { TabBar } from "../components/TabBar";
 import { AddSourceDialog } from "../components/AddSourceDialog";
+import { SearchPanel } from "../components/SearchPanel";
 import { WorkspaceSettingsDialog } from "../components/WorkspaceSettingsDialog";
 import type { DocumentDto, DocumentLookupDto } from "../bindings";
 
@@ -113,6 +114,24 @@ export function WorkspacePage() {
       }
     },
     [workspaceId, openTab, isArchived]
+  );
+
+  // 处理搜索结果点击（通过 document_id 打开标签）
+  const handleSearchResultClick = useCallback(
+    async (documentId: string) => {
+      if (!workspaceId || isArchived) return;
+
+      try {
+        const tab = await openTab.mutateAsync({
+          workspace_id: workspaceId,
+          document_id: documentId,
+        });
+        setUserSelectedTabId(tab.id);
+      } catch (err) {
+        console.error("打开标签失败:", err);
+      }
+    },
+    [workspaceId, openTab, isArchived],
   );
 
   // 处理标签点击
@@ -326,6 +345,10 @@ export function WorkspacePage() {
               </div>
             )}
           </div>
+          <SearchPanel
+            workspaceId={workspaceId}
+            onResultClick={handleSearchResultClick}
+          />
         </div>
 
         <div className="workspace-main">

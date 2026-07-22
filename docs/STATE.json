@@ -1,8 +1,8 @@
 {
   "version": 1,
   "lastUpdated": "2026-07-22",
-  "currentPhase": "C",
-  "currentWorkPackage": "WP-C02",
+  "currentPhase": "D",
+  "currentWorkPackage": "WP-D01",
   "phases": {
     "A": {
       "name": "基线收敛",
@@ -28,19 +28,20 @@
     },
     "C": {
       "name": "基础全文索引",
-      "status": "IN PROGRESS",
-      "dependsOn": ["A"],
+      "status": "DONE",
       "workPackages": [
         { "id": "WP-C01", "name": "添加 Tantivy 和索引基础设施", "status": "DONE", "commit": "323e867" },
-        { "id": "WP-C02", "name": "集成到 Source 扫描流程", "status": "IN_PROGRESS", "description": "扫描文件时自动索引，Source/Workspace 删除时清理索引" },
-        { "id": "WP-C03", "name": "暴露索引状态和管理命令", "status": "TODO", "description": "Tauri 命令：索引状态查询、手动重建索引" }
+        { "id": "WP-C02", "name": "集成到 Source 扫描流程", "status": "DONE", "commit": "78f5868" },
+        { "id": "WP-C03", "name": "暴露索引状态和管理命令", "status": "DONE", "commit": "750c58f" }
       ]
     },
     "D": {
       "name": "关键词搜索",
-      "status": "NOT STARTED",
+      "status": "IN PROGRESS",
       "dependsOn": ["C"],
-      "workPackages": []
+      "workPackages": [
+        { "id": "WP-D01", "name": "添加搜索 Tauri 命令和前端搜索 UI", "status": "IN_PROGRESS", "description": "工作区级关键词搜索，返回文件名/路径/分数，点击结果打开文件" }
+      ]
     },
     "E": {
       "name": "v0.1 收口",

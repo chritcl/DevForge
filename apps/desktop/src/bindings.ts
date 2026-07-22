@@ -83,6 +83,13 @@ export const commands = {
 	 *  清空现有索引，然后对工作区的所有数据源重新扫描和索引。
 	 */
 	rebuildWorkspaceIndex: (workspaceId: string) => typedError<IndexStatusDto, string>(__TAURI_INVOKE("rebuild_workspace_index", { workspaceId })),
+	/**
+	 *  搜索工作区
+	 * 
+	 *  在工作区的所有数据源中搜索关键词。
+	 *  空查询不执行搜索。
+	 */
+	searchWorkspace: (workspaceId: string, query: string) => typedError<SearchResultDto[], string>(__TAURI_INVOKE("search_workspace", { workspaceId, query })),
 };
 
 /* Types */
@@ -201,6 +208,18 @@ export type ScanResult = {
 	removed: number,
 	/**  跳过文档数 */
 	skipped: number,
+};
+
+/**  搜索结果条目 DTO */
+export type SearchResultDto = {
+	/**  文档 ID */
+	document_id: string,
+	/**  文件路径（相对于数据源根目录） */
+	path: string,
+	/**  文件名 */
+	file_name: string,
+	/**  匹配分数（越高越相关） */
+	score: number | null,
 };
 
 /**  敏感度 */

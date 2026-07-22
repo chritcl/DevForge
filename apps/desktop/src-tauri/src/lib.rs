@@ -38,6 +38,7 @@ fn create_builder() -> Builder<tauri::Wry> {
         commands::set_active_tab,
         commands::get_index_status,
         commands::rebuild_workspace_index,
+        commands::search_workspace,
     ])
 }
 
