@@ -26,10 +26,7 @@ pub trait IndexerPort: Send + Sync {
     ) -> Result<(), DomainError>;
 
     /// 批量索引文档
-    fn index_documents(
-        &self,
-        documents: &[IndexDocument<'_>],
-    ) -> Result<(), DomainError>;
+    fn index_documents(&self, documents: &[IndexDocument<'_>]) -> Result<(), DomainError>;
 
     /// 删除单个文档的索引
     fn remove_document(&self, document_id: &str) -> Result<(), DomainError>;
@@ -293,12 +290,12 @@ impl ScanSource {
 
                     // 更新索引
                     if let Some(indexer) = &self.indexer {
-                        if doc.content_readable && doc.sensitivity == devforge_domain::document::Sensitivity::Normal {
+                        if doc.content_readable
+                            && doc.sensitivity == devforge_domain::document::Sensitivity::Normal
+                        {
                             if let Ok(content) = std::fs::read_to_string(file_path) {
-                                let file_name = file_path
-                                    .file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("");
+                                let file_name =
+                                    file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                                 let _ = indexer.index_document(
                                     &doc.id.0,
                                     &source_id.0,
@@ -321,12 +318,12 @@ impl ScanSource {
 
                 // 索引新文档
                 if let Some(indexer) = &self.indexer {
-                    if doc.content_readable && doc.sensitivity == devforge_domain::document::Sensitivity::Normal {
+                    if doc.content_readable
+                        && doc.sensitivity == devforge_domain::document::Sensitivity::Normal
+                    {
                         if let Ok(content) = std::fs::read_to_string(file_path) {
-                            let file_name = file_path
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("");
+                            let file_name =
+                                file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                             let _ = indexer.index_document(
                                 &doc.id.0,
                                 &source_id.0,

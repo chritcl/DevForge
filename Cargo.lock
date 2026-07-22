@@ -764,6 +764,7 @@ dependencies = [
  "devforge-platform",
  "devforge-storage",
  "dirs",
+ "serde",
  "specta",
  "specta-typescript",
  "tauri",

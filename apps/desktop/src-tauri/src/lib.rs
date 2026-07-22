@@ -81,7 +81,8 @@ async fn initialize_app_state(
         .await
         .context("无法执行 SQLite migration")?;
 
-    let platform_metadata = devforge_platform::app_info::PlatformMetadata::new(version, data_dir.clone());
+    let platform_metadata =
+        devforge_platform::app_info::PlatformMetadata::new(version, data_dir.clone());
 
     let database_status =
         devforge_storage::status::SqliteDatabaseStatus::new(database.pool().clone());
