@@ -11,6 +11,42 @@ use devforge_domain::source::SourceId;
 
 use crate::document::FileTreeEntry;
 
+/// 全文索引端口（应用层端口）
+///
+/// 应用层通过此 trait 调用索引操作，不依赖具体实现。
+pub trait IndexerPort: Send + Sync {
+    /// 索引单个文档
+    fn index_document(
+        &self,
+        document_id: &str,
+        source_id: &str,
+        path: &str,
+        file_name: &str,
+        content: &str,
+    ) -> Result<(), DomainError>;
+
+    /// 批量索引文档
+    fn index_documents(
+        &self,
+        documents: &[IndexDocument<'_>],
+    ) -> Result<(), DomainError>;
+
+    /// 删除单个文档的索引
+    fn remove_document(&self, document_id: &str) -> Result<(), DomainError>;
+
+    /// 删除指定数据源的所有文档索引
+    fn remove_by_source(&self, source_id: &str) -> Result<(), DomainError>;
+}
+
+/// 待索引文档（应用层 DTO）
+pub struct IndexDocument<'a> {
+    pub document_id: &'a str,
+    pub source_id: &'a str,
+    pub path: &'a str,
+    pub file_name: &'a str,
+    pub content: &'a str,
+}
+
 /// Document Repository Trait（应用层端口）
 #[async_trait::async_trait]
 pub trait DocumentRepository: Send + Sync {
@@ -159,9 +195,11 @@ pub fn identify_document_kind(path: &std::path::Path) -> DocumentKind {
 /// 扫描源目录用例
 ///
 /// 通过 source_id 从数据库获取可信路径，不接受前端传入的路径参数。
+/// 如果提供了 indexer，扫描时会自动建立全文索引。
 pub struct ScanSource {
     source_repo: Arc<dyn crate::source::SourceRepository>,
     document_repo: Arc<dyn DocumentRepository>,
+    indexer: Option<Arc<dyn IndexerPort>>,
 }
 
 impl ScanSource {
@@ -172,7 +210,14 @@ impl ScanSource {
         Self {
             source_repo,
             document_repo,
+            indexer: None,
         }
+    }
+
+    /// 设置全文索引器
+    pub fn with_indexer(mut self, indexer: Arc<dyn IndexerPort>) -> Self {
+        self.indexer = Some(indexer);
+        self
     }
 
     pub async fn execute(&self, source_id: String) -> Result<ScanResult, DiscoveryError> {
@@ -245,6 +290,26 @@ impl ScanSource {
                     let mut doc = Document::new(source_id.clone(), relative, size, modified_at);
                     doc.id = existing.id.clone();
                     self.document_repo.upsert(&doc).await?;
+
+                    // 更新索引
+                    if let Some(indexer) = &self.indexer {
+                        if doc.content_readable && doc.sensitivity == devforge_domain::document::Sensitivity::Normal {
+                            if let Ok(content) = std::fs::read_to_string(file_path) {
+                                let file_name = file_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("");
+                                let _ = indexer.index_document(
+                                    &doc.id.0,
+                                    &source_id.0,
+                                    relative_path,
+                                    file_name,
+                                    &content,
+                                );
+                            }
+                        }
+                    }
+
                     updated += 1;
                 } else {
                     skipped += 1;
@@ -253,6 +318,26 @@ impl ScanSource {
                 // 新增文档
                 let doc = Document::new(source_id.clone(), relative, size, modified_at);
                 self.document_repo.create(&doc).await?;
+
+                // 索引新文档
+                if let Some(indexer) = &self.indexer {
+                    if doc.content_readable && doc.sensitivity == devforge_domain::document::Sensitivity::Normal {
+                        if let Ok(content) = std::fs::read_to_string(file_path) {
+                            let file_name = file_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("");
+                            let _ = indexer.index_document(
+                                &doc.id.0,
+                                &source_id.0,
+                                relative_path,
+                                file_name,
+                                &content,
+                            );
+                        }
+                    }
+                }
+
                 added += 1;
             }
         }
@@ -268,6 +353,12 @@ impl ScanSource {
                 let mut doc = (*existing_doc).clone();
                 doc.content_readable = false;
                 self.document_repo.upsert(&doc).await?;
+
+                // 从索引中移除
+                if let Some(indexer) = &self.indexer {
+                    let _ = indexer.remove_document(&doc.id.0);
+                }
+
                 removed += 1;
             }
         }

@@ -263,6 +263,55 @@ pub fn workspace_index_dir(workspace_id: &str, base_dir: &Path) -> PathBuf {
         .join("lexical")
 }
 
+/// 为 WorkspaceIndex 实现应用层 IndexerPort trait
+impl devforge_application::discovery::IndexerPort for WorkspaceIndex {
+    fn index_document(
+        &self,
+        document_id: &str,
+        source_id: &str,
+        path: &str,
+        file_name: &str,
+        content: &str,
+    ) -> Result<(), devforge_domain::error::DomainError> {
+        WorkspaceIndex::index_document(self, document_id, source_id, path, file_name, content)
+            .map_err(|e| devforge_domain::error::DomainError::Io(std::io::Error::other(e.to_string())))
+    }
+
+    fn index_documents(
+        &self,
+        documents: &[devforge_application::discovery::IndexDocument<'_>],
+    ) -> Result<(), devforge_domain::error::DomainError> {
+        let converted: Vec<IndexDocument<'_>> = documents
+            .iter()
+            .map(|d| IndexDocument {
+                document_id: d.document_id,
+                source_id: d.source_id,
+                path: d.path,
+                file_name: d.file_name,
+                content: d.content,
+            })
+            .collect();
+        WorkspaceIndex::index_documents(self, &converted)
+            .map_err(|e| devforge_domain::error::DomainError::Io(std::io::Error::other(e.to_string())))
+    }
+
+    fn remove_document(
+        &self,
+        document_id: &str,
+    ) -> Result<(), devforge_domain::error::DomainError> {
+        WorkspaceIndex::remove_document(self, document_id)
+            .map_err(|e| devforge_domain::error::DomainError::Io(std::io::Error::other(e.to_string())))
+    }
+
+    fn remove_by_source(
+        &self,
+        source_id: &str,
+    ) -> Result<(), devforge_domain::error::DomainError> {
+        WorkspaceIndex::remove_by_source(self, source_id)
+            .map_err(|e| devforge_domain::error::DomainError::Io(std::io::Error::other(e.to_string())))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

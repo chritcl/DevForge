@@ -273,13 +273,24 @@ impl ListSources {
 /// 移除数据源用例
 ///
 /// 注意：移除数据源只删除元数据，不删除源目录。
+/// 如果提供了 indexer，同时清理该数据源的全文索引。
 pub struct RemoveSource {
     source_repo: Arc<dyn SourceRepository>,
+    indexer: Option<Arc<dyn crate::discovery::IndexerPort>>,
 }
 
 impl RemoveSource {
     pub fn new(source_repo: Arc<dyn SourceRepository>) -> Self {
-        Self { source_repo }
+        Self {
+            source_repo,
+            indexer: None,
+        }
+    }
+
+    /// 设置全文索引器（移除数据源时同步清理索引）
+    pub fn with_indexer(mut self, indexer: Arc<dyn crate::discovery::IndexerPort>) -> Self {
+        self.indexer = Some(indexer);
+        self
     }
 
     pub async fn execute(&self, id: String) -> Result<(), SourceError> {
@@ -289,6 +300,11 @@ impl RemoveSource {
             .get(&source_id)
             .await?
             .ok_or(SourceError::SourceNotFound)?;
+
+        // 清理该数据源的全文索引
+        if let Some(indexer) = &self.indexer {
+            let _ = indexer.remove_by_source(&source_id.0);
+        }
 
         self.source_repo.delete(&source_id).await?;
         Ok(())
