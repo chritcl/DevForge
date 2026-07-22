@@ -1,4 +1,6 @@
 import { useDocumentContent } from "../hooks/useDocuments";
+import { CodeViewer } from "./CodeViewer";
+import { MarkdownViewer } from "./MarkdownViewer";
 import type { DocumentDto } from "../bindings";
 
 interface FileViewerProps {
@@ -67,7 +69,15 @@ export function FileViewer({ document }: FileViewerProps) {
     );
   }
 
-  // Markdown 渲染
+  if (content === undefined || content === null) {
+    return (
+      <div className="file-viewer-error">
+        <span>文件内容为空</span>
+      </div>
+    );
+  }
+
+  // Markdown 渲染（安全的 react-markdown + rehype-sanitize）
   if (document.kind === "markdown") {
     return (
       <div className="file-viewer-markdown">
@@ -77,14 +87,12 @@ export function FileViewer({ document }: FileViewerProps) {
             {document.relative_path.split(/[/\\]/).pop()}
           </span>
         </div>
-        <div className="file-viewer-markdown-content">
-          <pre>{content}</pre>
-        </div>
+        <MarkdownViewer content={content} />
       </div>
     );
   }
 
-  // 文本文件
+  // 代码和文本文件（Monaco Editor 只读查看器）
   return (
     <div className="file-viewer-text">
       <div className="file-viewer-text-header">
@@ -93,9 +101,7 @@ export function FileViewer({ document }: FileViewerProps) {
           {document.relative_path.split(/[/\\]/).pop()}
         </span>
       </div>
-      <div className="file-viewer-text-content">
-        <pre>{content}</pre>
-      </div>
+      <CodeViewer filePath={document.relative_path} content={content} />
     </div>
   );
 }

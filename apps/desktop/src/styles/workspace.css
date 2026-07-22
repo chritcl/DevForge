@@ -280,21 +280,156 @@
   font-weight: 500;
 }
 
-.file-viewer-text-content,
 .file-viewer-markdown-content {
   flex: 1;
   overflow: auto;
   padding: 16px;
 }
 
-.file-viewer-text-content pre,
-.file-viewer-markdown-content pre {
-  margin: 0;
+/* 代码查看器（Monaco Editor） */
+
+.file-viewer-code {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 大文件警告 */
+
+.file-viewer-large-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary);
+}
+
+.file-viewer-large-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.file-viewer-large-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.file-viewer-large-message {
+  font-size: 14px;
+  text-align: center;
+  max-width: 400px;
+  margin-bottom: 16px;
+}
+
+/* Markdown 查看器内容样式 */
+
+.file-viewer-markdown-content h1,
+.file-viewer-markdown-content h2,
+.file-viewer-markdown-content h3,
+.file-viewer-markdown-content h4,
+.file-viewer-markdown-content h5,
+.file-viewer-markdown-content h6 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.file-viewer-markdown-content h1 {
+  font-size: 24px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+
+.file-viewer-markdown-content h2 {
+  font-size: 20px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+.file-viewer-markdown-content h3 {
+  font-size: 16px;
+}
+
+.file-viewer-markdown-content p {
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+.file-viewer-markdown-content code {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
   font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
   font-size: 13px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+}
+
+.file-viewer-markdown-content pre {
+  background: var(--bg-secondary);
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.file-viewer-markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.file-viewer-markdown-content blockquote {
+  margin: 8px 0;
+  padding: 4px 16px;
+  border-left: 4px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.file-viewer-markdown-content ul,
+.file-viewer-markdown-content ol {
+  padding-left: 24px;
+  margin: 8px 0;
+}
+
+.file-viewer-markdown-content li {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.file-viewer-markdown-content a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.file-viewer-markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.file-viewer-markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.file-viewer-markdown-content th,
+.file-viewer-markdown-content td {
+  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.file-viewer-markdown-content th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.file-viewer-markdown-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.file-viewer-markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 16px 0;
 }
 
 /* 工作区列表样式 */
