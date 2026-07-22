@@ -29,6 +29,9 @@ sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-toki
 thiserror = "2"
 tempfile = "3"
 
+# Phase C 新增：全文索引
+tantivy = "0.26"
+
 # 内部 crate
 devforge-domain = { path = "crates/devforge-domain" }
 devforge-application = { path = "crates/devforge-application" }
