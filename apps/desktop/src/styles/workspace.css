@@ -578,3 +578,392 @@
   resize: vertical;
   min-height: 80px;
 }
+
+/* 工作区列表标签页 */
+
+.workspace-list-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0;
+}
+
+.workspace-tab {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.workspace-tab:hover {
+  color: var(--text-primary);
+}
+
+.workspace-tab-active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+/* 工作区卡片可点击状态 */
+
+.workspace-card-clickable {
+  cursor: pointer;
+}
+
+.workspace-card-clickable:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 工作区卡片操作菜单 */
+
+.workspace-card-actions {
+  margin-left: auto;
+  position: relative;
+}
+
+.workspace-card-menu-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.workspace-card-menu-btn:hover {
+  background: var(--hover-bg);
+}
+
+.workspace-card-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 120px;
+  z-index: 100;
+  padding: 4px;
+}
+
+.workspace-card-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+  color: var(--text-primary);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.workspace-card-menu-item:hover {
+  background: var(--hover-bg);
+}
+
+.workspace-card-menu-item-danger {
+  color: var(--error-color, #c00);
+}
+
+.workspace-card-menu-item-danger:hover {
+  background: var(--error-bg, #fee);
+}
+
+/* 危险按钮 */
+
+.btn-danger {
+  background: var(--error-color, #c00);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: var(--error-color-hover, #a00);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 警告文本 */
+
+.dialog-warning {
+  color: var(--warning-color, #a60);
+  font-size: 14px;
+  margin: 8px 0 16px;
+}
+
+/* 标签不可用状态 */
+
+.tab-item-unavailable {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* 归档工作区页面 */
+
+.workspace-archived-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.workspace-archived-icon {
+  font-size: 64px;
+  margin-bottom: 24px;
+}
+
+.workspace-archived-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.workspace-archived-name {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+
+.workspace-archived-description {
+  margin: 0 0 16px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+.workspace-archived-message {
+  margin: 0 0 32px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  max-width: 400px;
+}
+
+.workspace-archived-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* 设置对话框 */
+
+.dialog-wide {
+  width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+}
+
+.settings-tab {
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab-active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-field label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.settings-value {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.settings-value-mono {
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.text-muted {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* 数据源列表 */
+
+.settings-source-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.settings-source-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-source-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.settings-source-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.settings-source-kind {
+  padding: 1px 6px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.settings-source-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-source-date {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.settings-source-detail {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0;
+}
+
+.settings-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+/* 危险操作区域 */
+
+.settings-danger-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.settings-danger-item h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-danger-item p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* 危险按钮轮廓变体 */
+
+.btn-danger-outline {
+  background: none;
+  border: 1px solid var(--error-color, #c00);
+  color: var(--error-color, #c00);
+}
+
+.btn-danger-outline:hover {
+  background: var(--error-bg, #fee);
+}
+
+/* 信息提示 */
+
+.dialog-info {
+  color: var(--text-secondary);
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+/* 设置入口按钮 */
+
+.workspace-settings-btn {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background 0.2s, color 0.2s;
+}
+
+.workspace-settings-btn:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}

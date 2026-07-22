@@ -1,5 +1,4 @@
-import type { TabDto } from "../types";
-import type { DocumentLookupDto } from "../bindings";
+import type { TabDto, DocumentLookupDto } from "../bindings";
 
 interface TabBarProps {
   tabs: TabDto[];

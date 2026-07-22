@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import type { DocumentDto, DocumentLookupDto, FileTreeEntryDto } from "../bindings";
+import { commands } from "../bindings";
+import type { DocumentDto } from "../bindings";
 
 // 文档相关 Hook
 
@@ -19,11 +19,11 @@ function canReadDocument(document: DocumentDto | null | undefined): boolean {
 export function useDocuments(sourceId: string, parentPath?: string) {
   return useQuery({
     queryKey: ["documents", sourceId, parentPath],
-    queryFn: () =>
-      invoke<DocumentDto[]>("list_documents", {
-        source_id: sourceId,
-        parent_path: parentPath ?? null,
-      }),
+    queryFn: async () => {
+      const result = await commands.listDocuments(sourceId, parentPath ?? null);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: !!sourceId,
   });
 }
@@ -31,11 +31,11 @@ export function useDocuments(sourceId: string, parentPath?: string) {
 export function useFileTree(sourceId: string, parentPath?: string) {
   return useQuery({
     queryKey: ["file-tree", sourceId, parentPath],
-    queryFn: () =>
-      invoke<FileTreeEntryDto[]>("list_file_tree", {
-        source_id: sourceId,
-        parent_path: parentPath ?? null,
-      }),
+    queryFn: async () => {
+      const result = await commands.listFileTree(sourceId, parentPath ?? null);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: !!sourceId,
   });
 }
@@ -45,10 +45,11 @@ export function useDocumentContent(documentId: string, document: DocumentDto | n
 
   return useQuery({
     queryKey: ["document-content", documentId],
-    queryFn: () =>
-      invoke<string>("read_document_content", {
-        document_id: documentId,
-      }),
+    queryFn: async () => {
+      const result = await commands.readDocumentContent(documentId);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: canRead,
   });
 }
@@ -56,10 +57,11 @@ export function useDocumentContent(documentId: string, document: DocumentDto | n
 export function useDocumentsByIds(documentIds: string[]) {
   return useQuery({
     queryKey: ["documents-by-ids", ...documentIds.sort()],
-    queryFn: () =>
-      invoke<DocumentLookupDto[]>("get_documents_by_ids", {
-        document_ids: documentIds,
-      }),
+    queryFn: async () => {
+      const result = await commands.getDocumentsByIds(documentIds);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: documentIds.length > 0,
   });
 }

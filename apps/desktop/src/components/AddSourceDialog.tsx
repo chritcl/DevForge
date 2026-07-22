@@ -35,11 +35,8 @@ export function AddSourceDialog({ workspaceId, onClose }: AddSourceDialogProps) 
         path,
       });
 
-      // 添加成功后自动触发扫描
-      await scanSource.mutateAsync({
-        source_id: source.id,
-        root_path: source.root_path,
-      });
+      // 添加成功后自动触发扫描（后端从数据库获取可信路径）
+      await scanSource.mutateAsync(source.id);
 
       onClose();
     } catch (err) {

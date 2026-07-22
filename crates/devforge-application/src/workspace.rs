@@ -36,7 +36,8 @@ impl From<&Workspace> for WorkspaceDto {
 pub trait WorkspaceRepository: Send + Sync {
     async fn create(&self, workspace: &Workspace) -> Result<(), DomainError>;
     async fn get(&self, id: &WorkspaceId) -> Result<Option<Workspace>, DomainError>;
-    async fn list(&self) -> Result<Vec<Workspace>, DomainError>;
+    async fn list_active(&self) -> Result<Vec<Workspace>, DomainError>;
+    async fn list_archived(&self) -> Result<Vec<Workspace>, DomainError>;
     async fn update(&self, workspace: &Workspace) -> Result<(), DomainError>;
     async fn delete(&self, id: &WorkspaceId) -> Result<(), DomainError>;
 }
@@ -100,7 +101,7 @@ impl GetWorkspace {
     }
 }
 
-/// 列出工作区用例
+/// 列出活跃工作区用例
 pub struct ListWorkspaces {
     repo: Arc<dyn WorkspaceRepository>,
 }
@@ -111,12 +112,31 @@ impl ListWorkspaces {
     }
 
     pub async fn execute(&self) -> Result<Vec<WorkspaceDto>, AppError> {
-        let workspaces = self.repo.list().await?;
+        let workspaces = self.repo.list_active().await?;
+        Ok(workspaces.iter().map(WorkspaceDto::from).collect())
+    }
+}
+
+/// 列出已归档工作区用例
+pub struct ListArchivedWorkspaces {
+    repo: Arc<dyn WorkspaceRepository>,
+}
+
+impl ListArchivedWorkspaces {
+    pub fn new(repo: Arc<dyn WorkspaceRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn execute(&self) -> Result<Vec<WorkspaceDto>, AppError> {
+        let workspaces = self.repo.list_archived().await?;
         Ok(workspaces.iter().map(WorkspaceDto::from).collect())
     }
 }
 
 /// 更新工作区用例
+///
+/// 采用完整表单提交模式：名称必填，描述可选。
+/// 空描述自动转为 None。
 pub struct UpdateWorkspace {
     repo: Arc<dyn WorkspaceRepository>,
 }
@@ -129,8 +149,8 @@ impl UpdateWorkspace {
     pub async fn execute(
         &self,
         id: String,
-        name: Option<String>,
-        description: Option<Option<String>>,
+        name: String,
+        description: Option<String>,
     ) -> Result<WorkspaceDto, AppError> {
         let workspace_id = WorkspaceId(id);
         let mut workspace = self
@@ -139,13 +159,12 @@ impl UpdateWorkspace {
             .await?
             .ok_or(AppError::WorkspaceNotFound)?;
 
-        if let Some(new_name) = name {
-            workspace.update_name(new_name)?;
-        }
+        // 名称必填，领域层 trim 和校验
+        workspace.update_name(name)?;
 
-        if let Some(new_desc) = description {
-            workspace.update_description(new_desc);
-        }
+        // 空描述转为 None
+        let desc = description.filter(|d| !d.trim().is_empty());
+        workspace.update_description(desc);
 
         self.repo.update(&workspace).await?;
         Ok(WorkspaceDto::from(&workspace))
@@ -153,6 +172,8 @@ impl UpdateWorkspace {
 }
 
 /// 归档工作区用例
+///
+/// 幂等操作：已归档工作区再次归档不会损坏状态。
 pub struct ArchiveWorkspace {
     repo: Arc<dyn WorkspaceRepository>,
 }
@@ -162,7 +183,7 @@ impl ArchiveWorkspace {
         Self { repo }
     }
 
-    pub async fn execute(&self, id: String) -> Result<(), AppError> {
+    pub async fn execute(&self, id: String) -> Result<WorkspaceDto, AppError> {
         let workspace_id = WorkspaceId(id);
         let mut workspace = self
             .repo
@@ -172,11 +193,13 @@ impl ArchiveWorkspace {
 
         workspace.archive();
         self.repo.update(&workspace).await?;
-        Ok(())
+        Ok(WorkspaceDto::from(&workspace))
     }
 }
 
 /// 恢复工作区用例
+///
+/// 幂等操作：活跃工作区再次恢复不会损坏状态。
 pub struct RestoreWorkspace {
     repo: Arc<dyn WorkspaceRepository>,
 }
@@ -186,7 +209,7 @@ impl RestoreWorkspace {
         Self { repo }
     }
 
-    pub async fn execute(&self, id: String) -> Result<(), AppError> {
+    pub async fn execute(&self, id: String) -> Result<WorkspaceDto, AppError> {
         let workspace_id = WorkspaceId(id);
         let mut workspace = self
             .repo
@@ -196,7 +219,7 @@ impl RestoreWorkspace {
 
         workspace.restore();
         self.repo.update(&workspace).await?;
-        Ok(())
+        Ok(WorkspaceDto::from(&workspace))
     }
 }
 
@@ -278,9 +301,24 @@ mod tests {
             Ok(workspaces.get(&id.0).cloned())
         }
 
-        async fn list(&self) -> Result<Vec<Workspace>, DomainError> {
+        async fn list_active(&self) -> Result<Vec<Workspace>, DomainError> {
             let workspaces = self.workspaces.lock().unwrap();
-            let mut list: Vec<Workspace> = workspaces.values().cloned().collect();
+            let mut list: Vec<Workspace> = workspaces
+                .values()
+                .filter(|w| w.status == WorkspaceStatus::Active)
+                .cloned()
+                .collect();
+            list.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
+            Ok(list)
+        }
+
+        async fn list_archived(&self) -> Result<Vec<Workspace>, DomainError> {
+            let workspaces = self.workspaces.lock().unwrap();
+            let mut list: Vec<Workspace> = workspaces
+                .values()
+                .filter(|w| w.status == WorkspaceStatus::Archived)
+                .cloned()
+                .collect();
             list.sort_by_key(|b| std::cmp::Reverse(b.updated_at));
             Ok(list)
         }
@@ -348,8 +386,8 @@ mod tests {
         let updated = update
             .execute(
                 workspace.id.clone(),
-                Some("新名称".to_owned()),
-                Some(Some("新描述".to_owned())),
+                "新名称".to_owned(),
+                Some("新描述".to_owned()),
             )
             .await
             .unwrap();
@@ -396,5 +434,110 @@ mod tests {
 
         let result = get.execute(workspace.id.clone()).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_workspace_replaces_name_and_description() {
+        let repo = Arc::new(InMemoryWorkspaceRepository::new());
+        let create = CreateWorkspace::new(repo.clone());
+        let update = UpdateWorkspace::new(repo.clone());
+
+        let workspace = create
+            .execute("旧名称".to_owned(), Some("旧描述".to_owned()))
+            .await
+            .unwrap();
+
+        let updated = update
+            .execute(
+                workspace.id.clone(),
+                "新名称".to_owned(),
+                Some("新描述".to_owned()),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(updated.name, "新名称");
+        assert_eq!(updated.description, Some("新描述".to_owned()));
+    }
+
+    #[tokio::test]
+    async fn update_workspace_clears_description() {
+        let repo = Arc::new(InMemoryWorkspaceRepository::new());
+        let create = CreateWorkspace::new(repo.clone());
+        let update = UpdateWorkspace::new(repo.clone());
+
+        let workspace = create
+            .execute("测试".to_owned(), Some("有描述".to_owned()))
+            .await
+            .unwrap();
+
+        // 传入空描述应转为 None
+        let updated = update
+            .execute(workspace.id.clone(), "测试".to_owned(), Some("".to_owned()))
+            .await
+            .unwrap();
+
+        assert_eq!(updated.description, None);
+    }
+
+    #[tokio::test]
+    async fn update_workspace_rejects_blank_name() {
+        let repo = Arc::new(InMemoryWorkspaceRepository::new());
+        let create = CreateWorkspace::new(repo.clone());
+        let update = UpdateWorkspace::new(repo.clone());
+
+        let workspace = create.execute("测试".to_owned(), None).await.unwrap();
+
+        let result = update
+            .execute(workspace.id.clone(), "".to_owned(), None)
+            .await;
+        assert!(result.is_err());
+
+        let result = update
+            .execute(workspace.id.clone(), "   ".to_owned(), None)
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn archive_workspace_is_idempotent() {
+        let repo = Arc::new(InMemoryWorkspaceRepository::new());
+        let create = CreateWorkspace::new(repo.clone());
+        let archive = ArchiveWorkspace::new(repo.clone());
+        let get = GetWorkspace::new(repo.clone());
+
+        let workspace = create.execute("测试".to_owned(), None).await.unwrap();
+
+        // 第一次归档
+        archive.execute(workspace.id.clone()).await.unwrap();
+        let archived = get.execute(workspace.id.clone()).await.unwrap();
+        assert_eq!(archived.status, WorkspaceStatus::Archived);
+
+        // 第二次归档（幂等）
+        archive.execute(workspace.id.clone()).await.unwrap();
+        let still_archived = get.execute(workspace.id.clone()).await.unwrap();
+        assert_eq!(still_archived.status, WorkspaceStatus::Archived);
+    }
+
+    #[tokio::test]
+    async fn restore_workspace_is_idempotent() {
+        let repo = Arc::new(InMemoryWorkspaceRepository::new());
+        let create = CreateWorkspace::new(repo.clone());
+        let archive = ArchiveWorkspace::new(repo.clone());
+        let restore = RestoreWorkspace::new(repo.clone());
+        let get = GetWorkspace::new(repo.clone());
+
+        let workspace = create.execute("测试".to_owned(), None).await.unwrap();
+
+        // 归档后恢复
+        archive.execute(workspace.id.clone()).await.unwrap();
+        restore.execute(workspace.id.clone()).await.unwrap();
+        let restored = get.execute(workspace.id.clone()).await.unwrap();
+        assert_eq!(restored.status, WorkspaceStatus::Active);
+
+        // 第二次恢复（幂等）
+        restore.execute(workspace.id.clone()).await.unwrap();
+        let still_active = get.execute(workspace.id.clone()).await.unwrap();
+        assert_eq!(still_active.status, WorkspaceStatus::Active);
     }
 }

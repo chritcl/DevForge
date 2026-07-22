@@ -3,8 +3,9 @@
 use tauri::State;
 
 use devforge_application::workspace::{
-    AppError, ArchiveWorkspace, CreateWorkspace, DeleteWorkspace, GetWorkspace, ListWorkspaces,
-    MarkWorkspaceOpened, RestoreWorkspace, UpdateWorkspace, WorkspaceDto,
+    AppError, ArchiveWorkspace, CreateWorkspace, DeleteWorkspace, GetWorkspace,
+    ListArchivedWorkspaces, ListWorkspaces, MarkWorkspaceOpened, RestoreWorkspace, UpdateWorkspace,
+    WorkspaceDto,
 };
 
 use crate::state::AppState;
@@ -32,7 +33,7 @@ pub async fn get_workspace(
     use_case.execute(id).await
 }
 
-/// 列出工作区
+/// 列出活跃工作区
 #[tauri::command]
 #[specta::specta]
 pub async fn list_workspaces(state: State<'_, AppState>) -> Result<Vec<WorkspaceDto>, AppError> {
@@ -40,31 +41,53 @@ pub async fn list_workspaces(state: State<'_, AppState>) -> Result<Vec<Workspace
     use_case.execute().await
 }
 
+/// 列出已归档工作区
+#[tauri::command]
+#[specta::specta]
+pub async fn list_archived_workspaces(
+    state: State<'_, AppState>,
+) -> Result<Vec<WorkspaceDto>, AppError> {
+    let use_case = ListArchivedWorkspaces::new(state.workspace_repo());
+    use_case.execute().await
+}
+
 /// 更新工作区
+///
+/// 完整表单提交：名称必填，描述可选。
 #[tauri::command]
 #[specta::specta]
 pub async fn update_workspace(
     state: State<'_, AppState>,
     id: String,
-    name: Option<String>,
-    description: Option<Option<String>>,
+    name: String,
+    description: Option<String>,
 ) -> Result<WorkspaceDto, AppError> {
     let use_case = UpdateWorkspace::new(state.workspace_repo());
     use_case.execute(id, name, description).await
 }
 
 /// 归档工作区
+///
+/// 幂等操作：已归档工作区再次归档不会损坏状态。
 #[tauri::command]
 #[specta::specta]
-pub async fn archive_workspace(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+pub async fn archive_workspace(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<WorkspaceDto, AppError> {
     let use_case = ArchiveWorkspace::new(state.workspace_repo());
     use_case.execute(id).await
 }
 
 /// 恢复工作区
+///
+/// 幂等操作：活跃工作区再次恢复不会损坏状态。
 #[tauri::command]
 #[specta::specta]
-pub async fn restore_workspace(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+pub async fn restore_workspace(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<WorkspaceDto, AppError> {
     let use_case = RestoreWorkspace::new(state.workspace_repo());
     use_case.execute(id).await
 }

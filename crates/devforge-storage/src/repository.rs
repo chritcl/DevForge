@@ -77,10 +77,44 @@ impl devforge_application::workspace::WorkspaceRepository for SqliteWorkspaceRep
         }
     }
 
-    async fn list(&self) -> Result<Vec<Workspace>, DomainError> {
+    async fn list_active(&self) -> Result<Vec<Workspace>, DomainError> {
         let rows: Vec<(String, String, Option<String>, String, String, String, Option<String>)> =
             sqlx::query_as(
                 "SELECT id, name, description, status, created_at, updated_at, last_opened_at FROM workspaces WHERE status = 'active' ORDER BY last_opened_at DESC NULLS LAST, updated_at DESC"
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DomainError::Io(std::io::Error::other(e)))?;
+
+        let mut workspaces = Vec::new();
+        for (id, name, description, status, created_at, updated_at, last_opened_at) in rows {
+            workspaces.push(Workspace {
+                id: WorkspaceId(id),
+                name,
+                description,
+                status: WorkspaceStatus::parse_str(&status).ok_or_else(|| {
+                    DomainError::InvalidInput(format!("无效的工作区状态: {status}"))
+                })?,
+                created_at: chrono::DateTime::parse_from_rfc3339(&created_at)
+                    .map_err(|e| DomainError::InvalidInput(format!("无效的创建时间: {e}")))?
+                    .with_timezone(&chrono::Utc),
+                updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at)
+                    .map_err(|e| DomainError::InvalidInput(format!("无效的更新时间: {e}")))?
+                    .with_timezone(&chrono::Utc),
+                last_opened_at: last_opened_at
+                    .map(|t| chrono::DateTime::parse_from_rfc3339(&t))
+                    .transpose()
+                    .map_err(|e| DomainError::InvalidInput(format!("无效的最后打开时间: {e}")))?
+                    .map(|t| t.with_timezone(&chrono::Utc)),
+            });
+        }
+        Ok(workspaces)
+    }
+
+    async fn list_archived(&self) -> Result<Vec<Workspace>, DomainError> {
+        let rows: Vec<(String, String, Option<String>, String, String, String, Option<String>)> =
+            sqlx::query_as(
+                "SELECT id, name, description, status, created_at, updated_at, last_opened_at FROM workspaces WHERE status = 'archived' ORDER BY updated_at DESC, name ASC"
             )
             .fetch_all(&self.pool)
             .await
@@ -710,7 +744,7 @@ mod tests {
         assert_eq!(fetched.description, Some("描述".to_owned()));
 
         // 列表
-        let list = repo.list().await.unwrap();
+        let list = repo.list_active().await.unwrap();
         assert_eq!(list.len(), 1);
 
         // 更新
@@ -841,5 +875,310 @@ mod tests {
         tab_repo.delete(&tab.id).await.unwrap();
         let list = tab_repo.list_by_workspace(&workspace.id).await.unwrap();
         assert_eq!(list.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn delete_workspace_cascades_all_metadata() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+        let doc_repo = SqliteDocumentRepository::new(pool.clone());
+        let tab_repo = SqliteOpenTabRepository::new(pool.clone());
+
+        // 创建完整的工作区元数据链
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        let source = Source::new_git(
+            workspace.id.clone(),
+            "test-repo".to_owned(),
+            PathBuf::from("/test/path"),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        let doc = Document::new(
+            source.id.clone(),
+            PathBuf::from("src/main.rs"),
+            1024,
+            Utc::now(),
+        );
+        doc_repo.create(&doc).await.unwrap();
+
+        let tab = OpenTab::new(workspace.id.clone(), doc.id.clone(), 0);
+        tab_repo.create(&tab).await.unwrap();
+
+        // 删除工作区
+        workspace_repo.delete(&workspace.id).await.unwrap();
+
+        // 验证所有元数据被级联清理
+        assert!(workspace_repo.get(&workspace.id).await.unwrap().is_none());
+        assert!(source_repo.get(&source.id).await.unwrap().is_none());
+        assert!(doc_repo.get(&doc.id).await.unwrap().is_none());
+        assert_eq!(
+            tab_repo
+                .list_by_workspace(&workspace.id)
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_workspace_keeps_local_directory() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+
+        // 创建临时目录模拟本地仓库
+        let temp_dir = tempfile::tempdir().unwrap();
+        let local_path = temp_dir.path().join("my-repo");
+        std::fs::create_dir_all(&local_path).unwrap();
+        std::fs::write(local_path.join("README.md"), "# Test").unwrap();
+
+        // 创建工作区和数据源
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        let source = Source::new_directory(
+            workspace.id.clone(),
+            "my-repo".to_owned(),
+            local_path.clone(),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        // 删除工作区
+        workspace_repo.delete(&workspace.id).await.unwrap();
+
+        // 验证本地目录仍然存在
+        assert!(local_path.exists());
+        assert!(local_path.join("README.md").exists());
+    }
+
+    #[tokio::test]
+    async fn remove_source_cascades_documents_and_tabs() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+        let doc_repo = SqliteDocumentRepository::new(pool.clone());
+        let tab_repo = SqliteOpenTabRepository::new(pool.clone());
+
+        // 创建工作区
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        // 创建数据源
+        let source = Source::new_git(
+            workspace.id.clone(),
+            "test-repo".to_owned(),
+            PathBuf::from("/test/path"),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        // 创建文档和标签
+        let doc = Document::new(
+            source.id.clone(),
+            PathBuf::from("src/main.rs"),
+            1024,
+            Utc::now(),
+        );
+        doc_repo.create(&doc).await.unwrap();
+
+        let tab = OpenTab::new(workspace.id.clone(), doc.id.clone(), 0);
+        tab_repo.create(&tab).await.unwrap();
+
+        // 移除数据源
+        source_repo.delete(&source.id).await.unwrap();
+
+        // 验证关联的文档和标签被级联清理
+        assert!(source_repo.get(&source.id).await.unwrap().is_none());
+        assert!(doc_repo.get(&doc.id).await.unwrap().is_none());
+        assert_eq!(
+            tab_repo
+                .list_by_workspace(&workspace.id)
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_source_does_not_affect_other_sources() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+        let doc_repo = SqliteDocumentRepository::new(pool.clone());
+        let tab_repo = SqliteOpenTabRepository::new(pool.clone());
+
+        // 创建工作区
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        // 创建两个数据源
+        let source_a = Source::new_git(
+            workspace.id.clone(),
+            "repo-a".to_owned(),
+            PathBuf::from("/test/repo-a"),
+        );
+        source_repo.create(&source_a).await.unwrap();
+
+        let source_b = Source::new_git(
+            workspace.id.clone(),
+            "repo-b".to_owned(),
+            PathBuf::from("/test/repo-b"),
+        );
+        source_repo.create(&source_b).await.unwrap();
+
+        // 每个数据源创建文档和标签
+        let doc_a = Document::new(
+            source_a.id.clone(),
+            PathBuf::from("main.rs"),
+            100,
+            Utc::now(),
+        );
+        doc_repo.create(&doc_a).await.unwrap();
+
+        let doc_b = Document::new(
+            source_b.id.clone(),
+            PathBuf::from("lib.rs"),
+            200,
+            Utc::now(),
+        );
+        doc_repo.create(&doc_b).await.unwrap();
+
+        let tab_a = OpenTab::new(workspace.id.clone(), doc_a.id.clone(), 0);
+        tab_repo.create(&tab_a).await.unwrap();
+
+        let tab_b = OpenTab::new(workspace.id.clone(), doc_b.id.clone(), 1);
+        tab_repo.create(&tab_b).await.unwrap();
+
+        // 移除数据源 A
+        source_repo.delete(&source_a.id).await.unwrap();
+
+        // 验证数据源 A 的元数据被清理
+        assert!(source_repo.get(&source_a.id).await.unwrap().is_none());
+        assert!(doc_repo.get(&doc_a.id).await.unwrap().is_none());
+
+        // 验证数据源 B 完全不受影响
+        assert!(source_repo.get(&source_b.id).await.unwrap().is_some());
+        assert!(doc_repo.get(&doc_b.id).await.unwrap().is_some());
+        let tabs = tab_repo.list_by_workspace(&workspace.id).await.unwrap();
+        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs[0].document_id.0, doc_b.id.0);
+    }
+
+    #[tokio::test]
+    async fn remove_source_keeps_local_directory() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+
+        // 创建临时目录模拟本地仓库
+        let temp_dir = tempfile::tempdir().unwrap();
+        let local_path = temp_dir.path().join("my-repo");
+        std::fs::create_dir_all(&local_path).unwrap();
+        std::fs::write(local_path.join("file.txt"), "content").unwrap();
+
+        // 创建工作区和数据源
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        let source = Source::new_directory(
+            workspace.id.clone(),
+            "my-repo".to_owned(),
+            local_path.clone(),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        // 移除数据源
+        source_repo.delete(&source.id).await.unwrap();
+
+        // 验证本地目录仍然存在
+        assert!(local_path.exists());
+        assert!(local_path.join("file.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn archive_workspace_preserves_metadata() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+        let doc_repo = SqliteDocumentRepository::new(pool.clone());
+        let tab_repo = SqliteOpenTabRepository::new(pool.clone());
+
+        // 创建完整的工作区元数据链
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        let source = Source::new_git(
+            workspace.id.clone(),
+            "test-repo".to_owned(),
+            PathBuf::from("/test/path"),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        let doc = Document::new(
+            source.id.clone(),
+            PathBuf::from("src/main.rs"),
+            1024,
+            Utc::now(),
+        );
+        doc_repo.create(&doc).await.unwrap();
+
+        let tab = OpenTab::new(workspace.id.clone(), doc.id.clone(), 0);
+        tab_repo.create(&tab).await.unwrap();
+
+        // 归档工作区
+        let mut archived = workspace.clone();
+        archived.archive();
+        workspace_repo.update(&archived).await.unwrap();
+
+        // 验证所有元数据保留
+        let fetched = workspace_repo.get(&workspace.id).await.unwrap().unwrap();
+        assert_eq!(fetched.status, WorkspaceStatus::Archived);
+
+        let sources = source_repo.list_by_workspace(&workspace.id).await.unwrap();
+        assert_eq!(sources.len(), 1);
+
+        let docs = doc_repo.list_by_source(&source.id).await.unwrap();
+        assert_eq!(docs.len(), 1);
+
+        let tabs = tab_repo.list_by_workspace(&workspace.id).await.unwrap();
+        assert_eq!(tabs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn restore_workspace_preserves_metadata() {
+        let pool = setup_test_db().await;
+        let workspace_repo = SqliteWorkspaceRepository::new(pool.clone());
+        let source_repo = SqliteSourceRepository::new(pool.clone());
+
+        // 创建工作区并归档
+        let workspace = Workspace::new("测试工作区".to_owned(), None).unwrap();
+        workspace_repo.create(&workspace).await.unwrap();
+
+        let source = Source::new_git(
+            workspace.id.clone(),
+            "test-repo".to_owned(),
+            PathBuf::from("/test/path"),
+        );
+        source_repo.create(&source).await.unwrap();
+
+        let mut archived = workspace.clone();
+        archived.archive();
+        workspace_repo.update(&archived).await.unwrap();
+
+        // 恢复工作区
+        let mut restored = archived.clone();
+        restored.restore();
+        workspace_repo.update(&restored).await.unwrap();
+
+        // 验证元数据保留
+        let fetched = workspace_repo.get(&workspace.id).await.unwrap().unwrap();
+        assert_eq!(fetched.status, WorkspaceStatus::Active);
+
+        let sources = source_repo.list_by_workspace(&workspace.id).await.unwrap();
+        assert_eq!(sources.len(), 1);
     }
 }

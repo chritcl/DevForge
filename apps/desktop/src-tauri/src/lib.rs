@@ -18,6 +18,7 @@ fn create_builder() -> Builder<tauri::Wry> {
         commands::create_workspace,
         commands::get_workspace,
         commands::list_workspaces,
+        commands::list_archived_workspaces,
         commands::update_workspace,
         commands::archive_workspace,
         commands::restore_workspace,

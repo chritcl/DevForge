@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import type { TabDto } from "../types";
+import { commands } from "../bindings";
 
 // 标签页相关 Hook
 
 export function useTabs(workspaceId: string) {
   return useQuery({
     queryKey: ["tabs", workspaceId],
-    queryFn: () => invoke<TabDto[]>("list_tabs", { workspace_id: workspaceId }),
+    queryFn: async () => {
+      const result = await commands.listTabs(workspaceId);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: !!workspaceId,
   });
 }
@@ -15,8 +18,11 @@ export function useTabs(workspaceId: string) {
 export function useOpenTab() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { workspace_id: string; document_id: string }) =>
-      invoke<TabDto>("open_tab", params),
+    mutationFn: async (params: { workspace_id: string; document_id: string }) => {
+      const result = await commands.openTab(params.workspace_id, params.document_id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tabs", variables.workspace_id] });
     },
@@ -26,8 +32,11 @@ export function useOpenTab() {
 export function useCloseTab() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { id: string; workspace_id: string }) =>
-      invoke<void>("close_tab", { id: params.id }),
+    mutationFn: async (params: { id: string; workspace_id: string }) => {
+      const result = await commands.closeTab(params.id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tabs", variables.workspace_id] });
     },
@@ -37,8 +46,11 @@ export function useCloseTab() {
 export function useSetActiveTab() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { workspace_id: string; tab_id: string }) =>
-      invoke<void>("set_active_tab", params),
+    mutationFn: async (params: { workspace_id: string; tab_id: string }) => {
+      const result = await commands.setActiveTab(params.workspace_id, params.tab_id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tabs", variables.workspace_id] });
     },

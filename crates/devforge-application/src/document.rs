@@ -40,6 +40,8 @@ pub struct DocumentDto {
     pub source_id: String,
     pub relative_path: String,
     pub kind: DocumentKind,
+    /// 文件大小（字节）。JavaScript 安全整数范围足够覆盖实际文件大小。
+    #[specta(type = f64)]
     pub size: u64,
     pub sensitivity: Sensitivity,
     pub content_readable: bool,

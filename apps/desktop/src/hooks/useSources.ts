@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import type { SourceDto, ScanResult } from "../bindings";
+import { commands } from "../bindings";
 
 // 数据源相关 Hook
 
 export function useSources(workspaceId: string) {
   return useQuery({
     queryKey: ["sources", workspaceId],
-    queryFn: () => invoke<SourceDto[]>("list_sources", { workspace_id: workspaceId }),
+    queryFn: async () => {
+      const result = await commands.listSources(workspaceId);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: !!workspaceId,
   });
 }
@@ -15,8 +18,11 @@ export function useSources(workspaceId: string) {
 export function useAddLocalSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { workspace_id: string; path: string }) =>
-      invoke<SourceDto>("add_local_source", params),
+    mutationFn: async (params: { workspace_id: string; path: string }) => {
+      const result = await commands.addLocalSource(params.workspace_id, params.path);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["sources", variables.workspace_id] });
     },
@@ -26,8 +32,11 @@ export function useAddLocalSource() {
 export function useRemoveSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { id: string; workspace_id: string }) =>
-      invoke<void>("remove_source", { id: params.id }),
+    mutationFn: async (params: { id: string; workspace_id: string }) => {
+      const result = await commands.removeSource(params.id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["sources", variables.workspace_id] });
     },
@@ -37,8 +46,11 @@ export function useRemoveSource() {
 export function useScanSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { source_id: string; root_path: string }) =>
-      invoke<ScanResult>("scan_source", params),
+    mutationFn: async (source_id: string) => {
+      const result = await commands.scanSource(source_id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documents"] });
     },

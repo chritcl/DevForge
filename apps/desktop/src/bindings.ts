@@ -4,199 +4,248 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-  getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
-  createWorkspace: (name: string, description: string | null) =>
-    __TAURI_INVOKE<WorkspaceDto>("create_workspace", { name, description }),
-  getWorkspace: (id: string) =>
-    __TAURI_INVOKE<WorkspaceDto>("get_workspace", { id }),
-  listWorkspaces: () => __TAURI_INVOKE<WorkspaceDto[]>("list_workspaces"),
-  updateWorkspace: (
-    id: string,
-    name: string | null,
-    description: string | null | null
-  ) =>
-    __TAURI_INVOKE<WorkspaceDto>("update_workspace", {
-      id,
-      name,
-      description,
-    }),
-  archiveWorkspace: (id: string) =>
-    __TAURI_INVOKE<void>("archive_workspace", { id }),
-  restoreWorkspace: (id: string) =>
-    __TAURI_INVOKE<void>("restore_workspace", { id }),
-  deleteWorkspace: (id: string) =>
-    __TAURI_INVOKE<void>("delete_workspace", { id }),
-  markWorkspaceOpened: (id: string) =>
-    __TAURI_INVOKE<void>("mark_workspace_opened", { id }),
-  addLocalSource: (workspaceId: string, path: string) =>
-    __TAURI_INVOKE<SourceDto>("add_local_source", {
-      workspace_id: workspaceId,
-      path,
-    }),
-  listSources: (workspaceId: string) =>
-    __TAURI_INVOKE<SourceDto[]>("list_sources", { workspace_id: workspaceId }),
-  removeSource: (id: string) =>
-    __TAURI_INVOKE<void>("remove_source", { id }),
-  scanSource: (sourceId: string, rootPath: string) =>
-    __TAURI_INVOKE<ScanResult>("scan_source", {
-      source_id: sourceId,
-      root_path: rootPath,
-    }),
-  listDocuments: (sourceId: string, parentPath: string | null) =>
-    __TAURI_INVOKE<DocumentDto[]>("list_documents", {
-      source_id: sourceId,
-      parent_path: parentPath,
-    }),
-  listFileTree: (sourceId: string, parentPath: string | null) =>
-    __TAURI_INVOKE<FileTreeEntryDto[]>("list_file_tree", {
-      source_id: sourceId,
-      parent_path: parentPath,
-    }),
-  readDocumentContent: (documentId: string) =>
-    __TAURI_INVOKE<string>("read_document_content", {
-      document_id: documentId,
-    }),
-  getDocumentsByIds: (documentIds: string[]) =>
-    __TAURI_INVOKE<DocumentLookupDto[]>("get_documents_by_ids", {
-      document_ids: documentIds,
-    }),
-  openTab: (workspaceId: string, documentId: string) =>
-    __TAURI_INVOKE<TabDto>("open_tab", {
-      workspace_id: workspaceId,
-      document_id: documentId,
-    }),
-  closeTab: (id: string) => __TAURI_INVOKE<void>("close_tab", { id }),
-  listTabs: (workspaceId: string) =>
-    __TAURI_INVOKE<TabDto[]>("list_tabs", { workspace_id: workspaceId }),
-  setActiveTab: (workspaceId: string, tabId: string) =>
-    __TAURI_INVOKE<void>("set_active_tab", {
-      workspace_id: workspaceId,
-      tab_id: tabId,
-    }),
+	/**
+	 *  获取应用信息
+	 * 
+	 *  AppHandle 由 Tauri 注入，不出现在生成的 TypeScript 参数中。
+	 *  AppState 已由 Composition Root 注册为 managed state。
+	 */
+	getAppInfo: () => __TAURI_INVOKE<AppInfo>("get_app_info"),
+	/**  创建工作区 */
+	createWorkspace: (name: string, description: string | null) => typedError<WorkspaceDto, AppError>(__TAURI_INVOKE("create_workspace", { name, description })),
+	/**  获取工作区 */
+	getWorkspace: (id: string) => typedError<WorkspaceDto, AppError>(__TAURI_INVOKE("get_workspace", { id })),
+	/**  列出活跃工作区 */
+	listWorkspaces: () => typedError<WorkspaceDto[], AppError>(__TAURI_INVOKE("list_workspaces")),
+	/**  列出已归档工作区 */
+	listArchivedWorkspaces: () => typedError<WorkspaceDto[], AppError>(__TAURI_INVOKE("list_archived_workspaces")),
+	/**
+	 *  更新工作区
+	 * 
+	 *  完整表单提交：名称必填，描述可选。
+	 */
+	updateWorkspace: (id: string, name: string, description: string | null) => typedError<WorkspaceDto, AppError>(__TAURI_INVOKE("update_workspace", { id, name, description })),
+	/**
+	 *  归档工作区
+	 * 
+	 *  幂等操作：已归档工作区再次归档不会损坏状态。
+	 */
+	archiveWorkspace: (id: string) => typedError<WorkspaceDto, AppError>(__TAURI_INVOKE("archive_workspace", { id })),
+	/**
+	 *  恢复工作区
+	 * 
+	 *  幂等操作：活跃工作区再次恢复不会损坏状态。
+	 */
+	restoreWorkspace: (id: string) => typedError<WorkspaceDto, AppError>(__TAURI_INVOKE("restore_workspace", { id })),
+	/**  删除工作区 */
+	deleteWorkspace: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("delete_workspace", { id })),
+	/**  标记工作区已打开 */
+	markWorkspaceOpened: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("mark_workspace_opened", { id })),
+	/**  添加本地数据源（后端自动识别类型） */
+	addLocalSource: (workspaceId: string, path: string) => typedError<SourceDto, SourceError>(__TAURI_INVOKE("add_local_source", { workspaceId, path })),
+	/**  列出数据源 */
+	listSources: (workspaceId: string) => typedError<SourceDto[], SourceError>(__TAURI_INVOKE("list_sources", { workspaceId })),
+	/**
+	 *  移除数据源
+	 * 
+	 *  注意：移除数据源只删除元数据，不删除源目录。
+	 */
+	removeSource: (id: string) => typedError<null, SourceError>(__TAURI_INVOKE("remove_source", { id })),
+	/**
+	 *  扫描数据源
+	 * 
+	 *  后端通过 source_id 从数据库获取可信路径，不接受前端传入的路径。
+	 */
+	scanSource: (sourceId: string) => typedError<ScanResult, DiscoveryError>(__TAURI_INVOKE("scan_source", { sourceId })),
+	/**  列出文档 */
+	listDocuments: (sourceId: string, parentPath: string | null) => typedError<DocumentDto[], DocumentError>(__TAURI_INVOKE("list_documents", { sourceId, parentPath })),
+	/**  列出文件树条目 */
+	listFileTree: (sourceId: string, parentPath: string | null) => typedError<FileTreeEntryDto[], DocumentError>(__TAURI_INVOKE("list_file_tree", { sourceId, parentPath })),
+	/**  读取文档内容（不需要 source_root，后端从数据库反查可信根目录） */
+	readDocumentContent: (documentId: string) => typedError<string, DocumentError>(__TAURI_INVOKE("read_document_content", { documentId })),
+	/**  批量获取文档信息 */
+	getDocumentsByIds: (documentIds: string[]) => typedError<DocumentLookupDto[], DocumentError>(__TAURI_INVOKE("get_documents_by_ids", { documentIds })),
+	/**  打开标签页 */
+	openTab: (workspaceId: string, documentId: string) => typedError<TabDto, TabError>(__TAURI_INVOKE("open_tab", { workspaceId, documentId })),
+	/**  关闭标签页 */
+	closeTab: (id: string) => typedError<null, TabError>(__TAURI_INVOKE("close_tab", { id })),
+	/**  列出标签页 */
+	listTabs: (workspaceId: string) => typedError<TabDto[], TabError>(__TAURI_INVOKE("list_tabs", { workspaceId })),
+	/**  设置活动标签页 */
+	setActiveTab: (workspaceId: string, tabId: string) => typedError<null, TabError>(__TAURI_INVOKE("set_active_tab", { workspaceId, tabId })),
 };
 
-/** Types */
+/* Types */
+/**  应用层错误 */
+export type AppError = { Domain: string } | "WorkspaceNotFound" | "DuplicateName";
+
+/**
+ *  应用基础信息（诊断 DTO，IPC 输出）
+ * 
+ *  由 GetAppInfo Use Case 组合 AppMetadata + DbStatus 生成。
+ *  derive Type 用于 specta 自动生成 TypeScript 类型。
+ *  仅派生 Serialize（IPC 输出），不派生 Deserialize。
+ */
 export type AppInfo = {
-  version: string;
-  data_dir: string;
-  db_status: DbStatus;
+	version: string,
+	data_dir: string,
+	db_status: DbStatus,
 };
 
-export type DbStatus =
-  | { type: "NotInitialized" }
-  | { type: "Ready"; migration_version: number }
-  | { type: "Error"; message: string };
+/**
+ *  数据库状态
+ * 
+ *  `#[serde(tag = "type")]` 使 serde 生成内部标签表示：
+ *  `{ "type": "NotInitialized" } | { "type": "Ready", "migration_version": 1 } | ...`
+ *  specta 尊重 serde 标签策略，生成对应的 TypeScript tagged union。
+ *  仅派生 Serialize（IPC 输出），不无意义地派生 Deserialize。
+ */
+export type DbStatus = { type: "NotInitialized" } | { type: "Ready"; migration_version: number } | { type: "Error"; message: string };
 
-export type WorkspaceDto = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: WorkspaceStatus;
-  created_at: string;
-  updated_at: string;
-  last_opened_at: string | null;
-};
+/**  文件发现错误 */
+export type DiscoveryError = "SourceNotFound" | ({ Path: string }) & { Domain?: never; Io?: never } | ({ Io: string }) & { Domain?: never; Path?: never } | ({ Domain: string }) & { Io?: never; Path?: never };
 
-export type WorkspaceStatus = "active" | "archived";
-
-export type SourceDto = {
-  id: string;
-  workspace_id: string;
-  name: string;
-  root_path: string;
-  kind: SourceKind;
-  created_at: string;
-};
-
-export type SourceKind = "git" | "directory";
-
+/**  文档 DTO（用于 IPC 传输） */
 export type DocumentDto = {
-  id: string;
-  source_id: string;
-  relative_path: string;
-  kind: DocumentKind;
-  size: number;
-  sensitivity: Sensitivity;
-  content_readable: boolean;
+	id: string,
+	source_id: string,
+	relative_path: string,
+	kind: DocumentKind,
+	/**  文件大小（字节）。JavaScript 安全整数范围足够覆盖实际文件大小。 */
+	size: number | null,
+	sensitivity: Sensitivity,
+	content_readable: boolean,
 };
 
-export type DocumentKind =
-  | "text"
-  | "markdown"
-  | "image"
-  | "binary"
-  | "unknown";
+/**  文档查询错误 */
+export type DocumentError = "DocumentNotFound" | "SourceNotFound" | "SensitiveFile" | "FileTooLarge" | ({ Path: string }) & { Domain?: never; Io?: never } | ({ Io: string }) & { Domain?: never; Path?: never } | ({ Domain: string }) & { Io?: never; Path?: never };
 
-export type Sensitivity = "normal" | "sensitive";
+/**  文档类型 */
+export type DocumentKind = 
+/**  文本文件 */
+"text" | 
+/**  Markdown 文件 */
+"markdown" | 
+/**  图片文件 */
+"image" | 
+/**  二进制文件 */
+"binary" | 
+/**  未知类型 */
+"unknown";
 
+/**  文档查找结果 DTO */
+export type DocumentLookupDto = {
+	/**  请求的文档 ID */
+	document_id: string,
+	/**  查找状态 */
+	status: DocumentLookupStatus,
+	/**  文档元数据（仅 Found 时有值） */
+	document: DocumentDto | null,
+};
+
+/**  文档查找状态 */
+export type DocumentLookupStatus = 
+/**  找到文档且元数据完整 */
+"found" | 
+/**  文档元数据不存在（已从数据库删除） */
+"document_missing" | 
+/**  文档对应的数据源不存在 */
+"source_missing" | 
+/**  文件在磁盘上已不存在 */
+"file_missing" | 
+/**  路径安全验证失败 */
+"path_invalid";
+
+/**  文件树条目 DTO（IPC 传输） */
 export type FileTreeEntryDto = {
-  key: string;
-  source_id: string;
-  relative_path: string;
-  name: string;
-  entry_kind: FileTreeEntryKind;
-  document: DocumentDto | null;
+	key: string,
+	source_id: string,
+	relative_path: string,
+	name: string,
+	entry_kind: FileTreeEntryKind,
+	document: DocumentDto | null,
 };
 
+/**  文件树条目类型 */
 export type FileTreeEntryKind = "directory" | "file";
 
-export type DocumentLookupDto = {
-  document_id: string;
-  status: DocumentLookupStatus;
-  document: DocumentDto | null;
-};
-
-export type DocumentLookupStatus =
-  | "found"
-  | "document_missing"
-  | "source_missing"
-  | "file_missing"
-  | "path_invalid";
-
+/**  扫描结果 */
 export type ScanResult = {
-  added: number;
-  updated: number;
-  removed: number;
-  skipped: number;
+	/**  新增文档数 */
+	added: number,
+	/**  更新文档数 */
+	updated: number,
+	/**  删除文档数 */
+	removed: number,
+	/**  跳过文档数 */
+	skipped: number,
 };
 
+/**  敏感度 */
+export type Sensitivity = 
+/**  普通文件 */
+"normal" | 
+/**  敏感文件 */
+"sensitive";
+
+/**  数据源 DTO（用于 IPC 传输） */
+export type SourceDto = {
+	id: string,
+	workspace_id: string,
+	name: string,
+	root_path: string,
+	kind: SourceKind,
+	created_at: string,
+};
+
+/**  应用层错误 */
+export type SourceError = ({ Path: string }) & { Domain?: never; NotDirectory?: never; NotGitRepository?: never; PathNotExists?: never; PermissionDenied?: never } | "SourceNotFound" | "PathAlreadyExists" | ({ PathNotExists: string }) & { Domain?: never; NotDirectory?: never; NotGitRepository?: never; Path?: never; PermissionDenied?: never } | ({ NotDirectory: string }) & { Domain?: never; NotGitRepository?: never; Path?: never; PathNotExists?: never; PermissionDenied?: never } | ({ PermissionDenied: string }) & { Domain?: never; NotDirectory?: never; NotGitRepository?: never; Path?: never; PathNotExists?: never } | ({ NotGitRepository: string }) & { Domain?: never; NotDirectory?: never; Path?: never; PathNotExists?: never; PermissionDenied?: never } | ({ Domain: string }) & { NotDirectory?: never; NotGitRepository?: never; Path?: never; PathNotExists?: never; PermissionDenied?: never };
+
+/**  数据源类型 */
+export type SourceKind = 
+/**  Git 仓库 */
+"Git" | 
+/**  普通目录 */
+"Directory";
+
+/**  标签页 DTO */
 export type TabDto = {
-  id: string;
-  workspace_id: string;
-  document_id: string;
-  position: number;
-  is_active: boolean;
-  opened_at: string;
+	id: string,
+	workspace_id: string,
+	document_id: string,
+	position: number,
+	is_active: boolean,
+	opened_at: string,
 };
 
-export type AppError =
-  | { Domain: string }
-  | "WorkspaceNotFound"
-  | "DuplicateName";
-
-export type SourceError =
-  | { Path: string }
-  | "SourceNotFound"
-  | "PathAlreadyExists"
-  | { PathNotExists: string }
-  | { NotDirectory: string }
-  | { PermissionDenied: string }
-  | { NotGitRepository: string }
-  | { Domain: string };
-
-export type DocumentError =
-  | "DocumentNotFound"
-  | "SourceNotFound"
-  | "SensitiveFile"
-  | "FileTooLarge"
-  | { Path: string }
-  | { Io: string }
-  | { Domain: string };
-
+/**  标签页错误 */
 export type TabError = "TabNotFound" | { Domain: string };
 
-export type DiscoveryError =
-  | "SourceNotFound"
-  | { Path: string }
-  | { Io: string }
-  | { Domain: string };
+/**  工作区 DTO（用于 IPC 传输） */
+export type WorkspaceDto = {
+	id: string,
+	name: string,
+	description: string | null,
+	status: WorkspaceStatus,
+	created_at: string,
+	updated_at: string,
+	last_opened_at: string | null,
+};
+
+/**  工作区状态 */
+export type WorkspaceStatus = 
+/**  活跃状态 */
+"Active" | 
+/**  已归档 */
+"Archived";
+
+/* Tauri Specta runtime */
+async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {
+    try {
+        return { status: "ok", data: await result };
+    } catch (e) {
+        if (e instanceof Error) throw e;
+        return { status: "error", error: e as any };
+    }
+}
+

@@ -157,21 +157,35 @@ pub fn identify_document_kind(path: &std::path::Path) -> DocumentKind {
 }
 
 /// 扫描源目录用例
+///
+/// 通过 source_id 从数据库获取可信路径，不接受前端传入的路径参数。
 pub struct ScanSource {
+    source_repo: Arc<dyn crate::source::SourceRepository>,
     document_repo: Arc<dyn DocumentRepository>,
 }
 
 impl ScanSource {
-    pub fn new(document_repo: Arc<dyn DocumentRepository>) -> Self {
-        Self { document_repo }
+    pub fn new(
+        source_repo: Arc<dyn crate::source::SourceRepository>,
+        document_repo: Arc<dyn DocumentRepository>,
+    ) -> Self {
+        Self {
+            source_repo,
+            document_repo,
+        }
     }
 
-    pub async fn execute(
-        &self,
-        source_id: String,
-        root_path: PathBuf,
-    ) -> Result<ScanResult, DiscoveryError> {
-        let source_id = SourceId(source_id);
+    pub async fn execute(&self, source_id: String) -> Result<ScanResult, DiscoveryError> {
+        let source_id = SourceId(source_id.clone());
+
+        // 从数据库获取可信路径
+        let source = self
+            .source_repo
+            .get(&source_id)
+            .await
+            .map_err(|e| DiscoveryError::Domain(e.to_string()))?
+            .ok_or(DiscoveryError::SourceNotFound)?;
+        let root_path = source.root_path;
 
         // 验证路径存在
         if !root_path.exists() {
@@ -461,6 +475,57 @@ mod tests {
         use std::collections::HashMap;
         use std::sync::Mutex;
 
+        use crate::source::SourceRepository;
+
+        struct InMemorySourceRepository {
+            sources: Mutex<HashMap<String, devforge_domain::source::Source>>,
+        }
+
+        impl InMemorySourceRepository {
+            fn new() -> Self {
+                Self {
+                    sources: Mutex::new(HashMap::new()),
+                }
+            }
+        }
+
+        #[async_trait::async_trait]
+        impl SourceRepository for InMemorySourceRepository {
+            async fn create(
+                &self,
+                source: &devforge_domain::source::Source,
+            ) -> Result<(), DomainError> {
+                let mut sources = self.sources.lock().unwrap();
+                sources.insert(source.id.0.clone(), source.clone());
+                Ok(())
+            }
+
+            async fn get(
+                &self,
+                id: &devforge_domain::source::SourceId,
+            ) -> Result<Option<devforge_domain::source::Source>, DomainError> {
+                let sources = self.sources.lock().unwrap();
+                Ok(sources.get(&id.0).cloned())
+            }
+
+            async fn list_by_workspace(
+                &self,
+                _workspace_id: &devforge_domain::workspace::WorkspaceId,
+            ) -> Result<Vec<devforge_domain::source::Source>, DomainError> {
+                let sources = self.sources.lock().unwrap();
+                Ok(sources.values().cloned().collect())
+            }
+
+            async fn delete(
+                &self,
+                id: &devforge_domain::source::SourceId,
+            ) -> Result<(), DomainError> {
+                let mut sources = self.sources.lock().unwrap();
+                sources.remove(&id.0);
+                Ok(())
+            }
+        }
+
         struct InMemoryDocumentRepository {
             docs: Mutex<HashMap<String, Document>>,
         }
@@ -584,13 +649,21 @@ mod tests {
         std::fs::create_dir_all(temp.path().join(".git")).unwrap();
         std::fs::write(temp.path().join(".git/config"), "").unwrap();
 
-        let repo = Arc::new(InMemoryDocumentRepository::new());
-        let use_case = ScanSource::new(repo.clone());
+        // 先创建 Source 记录到数据库
+        let source_repo = Arc::new(InMemorySourceRepository::new());
+        let workspace_id = devforge_domain::workspace::WorkspaceId::new();
+        let source = devforge_domain::source::Source::new_git(
+            workspace_id,
+            "test-repo".to_owned(),
+            temp.path().to_path_buf(),
+        );
+        let source_id = source.id.0.clone();
+        source_repo.create(&source).await.unwrap();
 
-        let result = use_case
-            .execute("source-1".to_owned(), temp.path().to_path_buf())
-            .await
-            .unwrap();
+        let doc_repo = Arc::new(InMemoryDocumentRepository::new());
+        let use_case = ScanSource::new(source_repo.clone(), doc_repo.clone());
+
+        let result = use_case.execute(source_id).await.unwrap();
 
         assert_eq!(result.added, 2); // main.rs 和 README.md
         assert_eq!(result.skipped, 0);

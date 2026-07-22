@@ -1,20 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
-import type { WorkspaceDto } from "../bindings";
+import { commands } from "../bindings";
 
 // 工作区相关 Hook
 
 export function useWorkspaces() {
   return useQuery({
-    queryKey: ["workspaces"],
-    queryFn: () => invoke<WorkspaceDto[]>("list_workspaces"),
+    queryKey: ["workspaces", "active"],
+    queryFn: async () => {
+      const result = await commands.listWorkspaces();
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
+  });
+}
+
+export function useArchivedWorkspaces() {
+  return useQuery({
+    queryKey: ["workspaces", "archived"],
+    queryFn: async () => {
+      const result = await commands.listArchivedWorkspaces();
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
   });
 }
 
 export function useWorkspace(id: string) {
   return useQuery({
     queryKey: ["workspace", id],
-    queryFn: () => invoke<WorkspaceDto>("get_workspace", { id }),
+    queryFn: async () => {
+      const result = await commands.getWorkspace(id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     enabled: !!id,
   });
 }
@@ -22,10 +40,13 @@ export function useWorkspace(id: string) {
 export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: { name: string; description?: string }) =>
-      invoke<WorkspaceDto>("create_workspace", params),
+    mutationFn: async (params: { name: string; description?: string | null }) => {
+      const result = await commands.createWorkspace(params.name, params.description ?? null);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspaces", "active"] });
     },
   });
 }
@@ -33,11 +54,11 @@ export function useCreateWorkspace() {
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (params: {
-      id: string;
-      name?: string;
-      description?: string | null;
-    }) => invoke<WorkspaceDto>("update_workspace", params),
+    mutationFn: async (params: { id: string; name: string; description?: string | null }) => {
+      const result = await commands.updateWorkspace(params.id, params.name, params.description ?? null);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       queryClient.invalidateQueries({ queryKey: ["workspace", variables.id] });
@@ -48,7 +69,11 @@ export function useUpdateWorkspace() {
 export function useDeleteWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke<void>("delete_workspace", { id }),
+    mutationFn: async (id: string) => {
+      const result = await commands.deleteWorkspace(id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
@@ -58,9 +83,29 @@ export function useDeleteWorkspace() {
 export function useArchiveWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke<void>("archive_workspace", { id }),
-    onSuccess: () => {
+    mutationFn: async (id: string) => {
+      const result = await commands.archiveWorkspace(id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
+    onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspace", id] });
+    },
+  });
+}
+
+export function useRestoreWorkspace() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const result = await commands.restoreWorkspace(id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      queryClient.invalidateQueries({ queryKey: ["workspace", id] });
     },
   });
 }
@@ -68,7 +113,11 @@ export function useArchiveWorkspace() {
 export function useMarkWorkspaceOpened() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => invoke<void>("mark_workspace_opened", { id }),
+    mutationFn: async (id: string) => {
+      const result = await commands.markWorkspaceOpened(id);
+      if (result.status === "error") throw result.error;
+      return result.data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
     },
