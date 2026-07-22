@@ -140,7 +140,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 通过
 
 cargo test --workspace
-- 通过（82 tests）
+- 通过（97 tests）
 
 pnpm typecheck
 - 通过
@@ -153,16 +153,27 @@ pnpm test
 
 以下功能尚未实现，不标记为完成：
 
-- 工作区编辑、归档、恢复和删除 UI
-- 数据源移除 UI
-- Monaco Editor
-- Markdown 渲染器
+- Monaco Editor 只读代码查看器（当前使用 `<pre>` 纯文本展示）
+- Markdown 安全渲染器（当前使用 `<pre>` 纯文本展示）
 - 文件监听与增量刷新
 - workspace_settings 的真实使用
 - 大目录分页（当前不设上限，性能风险已记录）
 - 扫描事务和后台任务模型
 
+## 已确认实现的功能
+
+以下功能经代码审查确认已实现：
+
+- 工作区创建、编辑、归档、恢复和删除 UI（WorkspaceListPage + WorkspaceSettingsDialog）
+- 数据源移除 UI（WorkspaceSettingsDialog 数据源 tab）
+- 文件树懒加载（FileTree + useFileTree）
+- 标签栏和标签管理（TabBar + useTabs）
+- 文件查看器基础版（FileViewer，纯文本展示）
+- 添加数据源对话框（AddSourceDialog）
+- 启动恢复标签（WorkspacePage 挂载时恢复）
+- 关闭活动标签后自动选择下一个标签（CloseTab 用例已修复）
+
 ## 基线信息
 
 - 分支：main
-- 当前 HEAD：c01649c
+- 当前 HEAD：6736a33

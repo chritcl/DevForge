@@ -39,6 +39,11 @@ export function useRemoveSource() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["sources", variables.workspace_id] });
+      // 移除数据源后，级联清理关联的文档、文件树和标签缓存
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["file-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["documents-by-ids"] });
+      queryClient.invalidateQueries({ queryKey: ["tabs", variables.workspace_id] });
     },
   });
 }

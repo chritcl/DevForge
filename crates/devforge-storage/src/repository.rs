@@ -623,6 +623,33 @@ impl devforge_application::tab::TabRepository for SqliteOpenTabRepository {
         Ok(())
     }
 
+    async fn get(&self, id: &str) -> Result<Option<OpenTab>, DomainError> {
+        let row: Option<(String, String, String, i32, i32, String)> =
+            sqlx::query_as(
+                "SELECT id, workspace_id, document_id, position, is_active, opened_at FROM open_tabs WHERE id = ?"
+            )
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| DomainError::Io(std::io::Error::other(e)))?;
+
+        match row {
+            Some((id, workspace_id, document_id, position, is_active, opened_at)) => {
+                Ok(Some(OpenTab {
+                    id,
+                    workspace_id: WorkspaceId(workspace_id),
+                    document_id: DocumentId(document_id),
+                    position,
+                    is_active: is_active != 0,
+                    opened_at: chrono::DateTime::parse_from_rfc3339(&opened_at)
+                        .map_err(|e| DomainError::InvalidInput(format!("无效的打开时间: {e}")))?
+                        .with_timezone(&chrono::Utc),
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn list_by_workspace(
         &self,
         workspace_id: &WorkspaceId,

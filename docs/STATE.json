@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "lastUpdated": "2026-07-22",
+  "currentPhase": "A",
+  "currentWorkPackage": null,
+  "phases": {
+    "A": {
+      "name": "基线收敛",
+      "status": "DONE",
+      "workPackages": [
+        {
+          "id": "WP-A01",
+          "name": "创建 docs/GOAL.md",
+          "status": "DONE",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A02",
+          "name": "创建 docs/STATE.json",
+          "status": "DONE",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A03",
+          "name": "修复关闭活动标签不持久化新活动标签",
+          "status": "DONE",
+          "priority": "P0",
+          "description": "CloseTab 用例在删除标签后自动选择下一个活动标签并持久化",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A04",
+          "name": "修复 removeSource 前端缓存一致性",
+          "status": "DONE",
+          "priority": "P1",
+          "description": "useRemoveSource 成功后 invalidates documents/file-tree/open-tabs 查询",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A05",
+          "name": "删除死文件 types.ts",
+          "status": "DONE",
+          "priority": "P2",
+          "description": "删除与 Specta 生成的 bindings.ts 重复且未被引用的 types.ts",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A06",
+          "name": "修复 GetDocumentsByIds 错误吞没",
+          "status": "DONE",
+          "priority": "P2",
+          "description": "数据库错误使用 QueryError 状态而非伪装为 DocumentMissing/SourceMissing",
+          "commit": "pending"
+        },
+        {
+          "id": "WP-A07",
+          "name": "更新 implementation-status.md",
+          "status": "DONE",
+          "priority": "P2",
+          "description": "修正基线 HEAD、测试计数和功能完成度",
+          "commit": "pending"
+        }
+      ]
+    },
+    "B": {
+      "name": "文件查看",
+      "status": "NOT STARTED",
+      "dependsOn": ["A"],
+      "workPackages": []
+    },
+    "C": {
+      "name": "基础全文索引",
+      "status": "NOT STARTED",
+      "dependsOn": ["A"],
+      "workPackages": []
+    },
+    "D": {
+      "name": "关键词搜索",
+      "status": "NOT STARTED",
+      "dependsOn": ["C"],
+      "workPackages": []
+    },
+    "E": {
+      "name": "v0.1 收口",
+      "status": "NOT STARTED",
+      "dependsOn": ["B", "C", "D"],
+      "workPackages": []
+    }
+  }
+}

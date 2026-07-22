@@ -134,6 +134,7 @@ export function WorkspacePage() {
   );
 
   // 处理标签关闭
+  // 后端已自动选择下一个活动标签，前端清除用户选择让 activeTabId 派生逻辑接管
   const handleTabClose = useCallback(
     async (tabId: string) => {
       if (!workspaceId || isArchived) return;
@@ -143,23 +144,13 @@ export function WorkspacePage() {
           id: tabId,
           workspace_id: workspaceId,
         });
-
-        // 如果关闭的是活动标签，切换到相邻标签
-        if (tabId === activeTabId && tabs) {
-          const currentIndex = tabs.findIndex((t) => t.id === tabId);
-          const remainingTabs = tabs.filter((t) => t.id !== tabId);
-          if (remainingTabs.length > 0) {
-            const nextIndex = Math.min(currentIndex, remainingTabs.length - 1);
-            setUserSelectedTabId(remainingTabs[nextIndex].id);
-          } else {
-            setUserSelectedTabId(null);
-          }
-        }
+        // 清除用户手动选择，让 useMemo 回退到后端 is_active 字段
+        setUserSelectedTabId(null);
       } catch (err) {
         console.error("关闭标签失败:", err);
       }
     },
-    [workspaceId, closeTab, activeTabId, tabs, isArchived]
+    [workspaceId, closeTab, isArchived]
   );
 
   // 恢复工作区

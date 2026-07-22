@@ -137,6 +137,8 @@ pub enum DocumentLookupStatus {
     FileMissing,
     /// 路径安全验证失败
     PathInvalid,
+    /// 查询数据库时发生错误（非"不存在"，而是真正的错误）
+    QueryError,
 }
 
 /// 文档查找结果 DTO
@@ -323,10 +325,10 @@ impl GetDocumentsByIds {
                     document: None,
                 };
             }
-            Err(_) => {
+            Err(_e) => {
                 return DocumentLookupDto {
                     document_id: document_id.to_owned(),
-                    status: DocumentLookupStatus::DocumentMissing,
+                    status: DocumentLookupStatus::QueryError,
                     document: None,
                 };
             }
@@ -342,10 +344,10 @@ impl GetDocumentsByIds {
                     document: None,
                 };
             }
-            Err(_) => {
+            Err(_e) => {
                 return DocumentLookupDto {
                     document_id: document_id.to_owned(),
-                    status: DocumentLookupStatus::SourceMissing,
+                    status: DocumentLookupStatus::QueryError,
                     document: None,
                 };
             }

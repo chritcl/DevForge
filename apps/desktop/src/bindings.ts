@@ -154,7 +154,9 @@ export type DocumentLookupStatus =
 /**  文件在磁盘上已不存在 */
 "file_missing" | 
 /**  路径安全验证失败 */
-"path_invalid";
+"path_invalid" | 
+/**  查询数据库时发生错误（非"不存在"，而是真正的错误） */
+"query_error";
 
 /**  文件树条目 DTO（IPC 传输） */
 export type FileTreeEntryDto = {

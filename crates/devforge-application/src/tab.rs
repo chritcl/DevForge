@@ -11,6 +11,7 @@ use devforge_domain::workspace::WorkspaceId;
 #[async_trait::async_trait]
 pub trait TabRepository: Send + Sync {
     async fn create(&self, tab: &OpenTabEntity) -> Result<(), DomainError>;
+    async fn get(&self, id: &str) -> Result<Option<OpenTabEntity>, DomainError>;
     async fn list_by_workspace(
         &self,
         workspace_id: &WorkspaceId,
@@ -115,7 +116,23 @@ impl CloseTab {
     }
 
     pub async fn execute(&self, id: String) -> Result<(), TabError> {
+        // 查询被删除标签的信息，不存在则报错
+        let tab = self.tab_repo.get(&id).await?.ok_or(TabError::TabNotFound)?;
+        let is_active = tab.is_active;
+        let workspace_id = tab.workspace_id;
+
         self.tab_repo.delete(&id).await?;
+
+        // 如果删除的是活动标签，自动选择下一个活动标签
+        if is_active {
+            let remaining = self.tab_repo.list_by_workspace(&workspace_id).await?;
+            if let Some(next_tab) = remaining.first() {
+                self.tab_repo
+                    .set_active(&workspace_id, &next_tab.id)
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -178,6 +195,11 @@ mod tests {
             let mut tabs = self.tabs.lock().unwrap();
             tabs.insert(tab.id.clone(), tab.clone());
             Ok(())
+        }
+
+        async fn get(&self, id: &str) -> Result<Option<OpenTabEntity>, DomainError> {
+            let tabs = self.tabs.lock().unwrap();
+            Ok(tabs.get(id).cloned())
         }
 
         async fn list_by_workspace(
@@ -313,5 +335,100 @@ mod tests {
         let tabs = list.execute("workspace-1".to_owned()).await.unwrap();
         let active_tab = tabs.iter().find(|t| t.is_active).unwrap();
         assert_eq!(active_tab.id, tab1.id);
+    }
+
+    #[tokio::test]
+    async fn close_active_tab_selects_next() {
+        let repo = Arc::new(InMemoryTabRepository::new());
+        let open = OpenTab::new(repo.clone());
+        let close = CloseTab::new(repo.clone());
+        let list = ListTabs::new(repo.clone());
+
+        // 打开两个标签，第二个为活动标签
+        let _tab1 = open
+            .execute("workspace-1".to_owned(), "document-1".to_owned())
+            .await
+            .unwrap();
+        let tab2 = open
+            .execute("workspace-1".to_owned(), "document-2".to_owned())
+            .await
+            .unwrap();
+        assert!(tab2.is_active);
+
+        // 关闭活动标签
+        close.execute(tab2.id.clone()).await.unwrap();
+
+        // 剩余标签中应有一个活动标签
+        let tabs = list.execute("workspace-1".to_owned()).await.unwrap();
+        assert_eq!(tabs.len(), 1);
+        assert!(
+            tabs[0].is_active,
+            "关闭活动标签后，剩余标签应自动成为活动标签"
+        );
+    }
+
+    #[tokio::test]
+    async fn close_inactive_tab_preserves_active() {
+        let repo = Arc::new(InMemoryTabRepository::new());
+        let open = OpenTab::new(repo.clone());
+        let close = CloseTab::new(repo.clone());
+        let list = ListTabs::new(repo.clone());
+
+        // 打开两个标签
+        let _tab1 = open
+            .execute("workspace-1".to_owned(), "document-1".to_owned())
+            .await
+            .unwrap();
+        let tab2 = open
+            .execute("workspace-1".to_owned(), "document-2".to_owned())
+            .await
+            .unwrap();
+        // tab2 是活动标签
+
+        // 获取 tab1 的实际 ID（重新查询）
+        let tabs = list.execute("workspace-1".to_owned()).await.unwrap();
+        let inactive_tab = tabs.iter().find(|t| !t.is_active).unwrap();
+
+        // 关闭非活动标签
+        close.execute(inactive_tab.id.clone()).await.unwrap();
+
+        // 剩余标签中活动标签应保持不变
+        let tabs = list.execute("workspace-1".to_owned()).await.unwrap();
+        assert_eq!(tabs.len(), 1);
+        assert!(tabs[0].is_active, "关闭非活动标签后，活动标签应保持不变");
+        assert_eq!(tabs[0].id, tab2.id);
+    }
+
+    #[tokio::test]
+    async fn close_nonexistent_tab_returns_error() {
+        let repo = Arc::new(InMemoryTabRepository::new());
+        let close = CloseTab::new(repo.clone());
+
+        let result = close.execute("nonexistent".to_owned()).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            TabError::TabNotFound => {} // 预期错误
+            other => panic!("期望 TabNotFound，实际: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn close_last_tab_no_error() {
+        let repo = Arc::new(InMemoryTabRepository::new());
+        let open = OpenTab::new(repo.clone());
+        let close = CloseTab::new(repo.clone());
+        let list = ListTabs::new(repo.clone());
+
+        // 打开一个标签并关闭
+        let tab = open
+            .execute("workspace-1".to_owned(), "document-1".to_owned())
+            .await
+            .unwrap();
+
+        // 关闭唯一标签不应报错
+        close.execute(tab.id.clone()).await.unwrap();
+
+        let tabs = list.execute("workspace-1".to_owned()).await.unwrap();
+        assert_eq!(tabs.len(), 0);
     }
 }
