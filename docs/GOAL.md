@@ -46,11 +46,11 @@ docs/implementation-status.md
 
 | 阶段 | 名称 | 状态 |
 |------|------|------|
-| Phase A | 基线收敛 | IN PROGRESS |
-| Phase B | 文件查看 | NOT STARTED |
-| Phase C | 基础全文索引 | NOT STARTED |
-| Phase D | 关键词搜索 | NOT STARTED |
-| Phase E | v0.1 收口 | NOT STARTED |
+| Phase A | 基线收敛 | DONE |
+| Phase B | 文件查看 | DONE |
+| Phase C | 基础全文索引 | DONE |
+| Phase D | 关键词搜索 | DONE |
+| Phase E | v0.1 收口 | DONE |
 
 ## 阶段退出条件
 

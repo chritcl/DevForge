@@ -130,6 +130,48 @@
 - Sensitivity 大小写不匹配：已修复为 snake_case
 - bindings.ts 过期：已重新生成
 
+## v0.1 实施状态
+
+### Phase A - 基线收敛（DONE）
+
+| 工作包 | 状态 | 提交 |
+|--------|------|------|
+| WP-A01 创建 docs/GOAL.md | DONE | 4018dc3 |
+| WP-A02 创建 docs/STATE.json | DONE | 4018dc3 |
+| WP-A03 修复关闭活动标签持久化 | DONE | 4018dc3 |
+| WP-A04 修复 removeSource 缓存一致性 | DONE | 4018dc3 |
+| WP-A05 删除死文件 types.ts | DONE | 4018dc3 |
+| WP-A06 修复 GetDocumentsByIds 错误吞没 | DONE | 4018dc3 |
+| WP-A07 更新 implementation-status.md | DONE | 4018dc3 |
+
+### Phase B - 文件查看（DONE）
+
+| 工作包 | 状态 | 提交 |
+|--------|------|------|
+| WP-B01 Monaco Editor 代码查看器 | DONE | 0a759c5 |
+| WP-B02 Markdown 安全渲染器 | DONE | 0a759c5 |
+| WP-B03 集成到 FileViewer | DONE | 0a759c5 |
+
+### Phase C - 基础全文索引（DONE）
+
+| 工作包 | 状态 | 提交 |
+|--------|------|------|
+| WP-C01 Tantivy 索引基础设施 | DONE | 323e867 |
+| WP-C02 集成到 Source 扫描流程 | DONE | 78f5868 |
+| WP-C03 暴露索引状态和管理命令 | DONE | 750c58f |
+
+### Phase D - 关键词搜索（DONE）
+
+| 工作包 | 状态 | 提交 |
+|--------|------|------|
+| WP-D01 搜索 Tauri 命令和前端 UI | DONE | 2c57429 |
+
+### Phase E - v0.1 收口（IN PROGRESS）
+
+| 工作包 | 状态 | 说明 |
+|--------|------|------|
+| WP-E01 最终验证和文档更新 | IN PROGRESS | 全量验证、文档更新 |
+
 ## 验证命令记录
 
 ```
@@ -140,40 +182,52 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 通过
 
 cargo test --workspace
-- 通过（97 tests）
+- 通过（105 tests）
 
 pnpm typecheck
 - 通过
 
 pnpm test
 - 通过（5 tests）
+
+pnpm lint
+- 通过
 ```
-
-## 剩余 Phase 1 缺口
-
-以下功能尚未实现，不标记为完成：
-
-- Monaco Editor 只读代码查看器（当前使用 `<pre>` 纯文本展示）
-- Markdown 安全渲染器（当前使用 `<pre>` 纯文本展示）
-- 文件监听与增量刷新
-- workspace_settings 的真实使用
-- 大目录分页（当前不设上限，性能风险已记录）
-- 扫描事务和后台任务模型
 
 ## 已确认实现的功能
 
-以下功能经代码审查确认已实现：
+### 核心工作流
 
-- 工作区创建、编辑、归档、恢复和删除 UI（WorkspaceListPage + WorkspaceSettingsDialog）
-- 数据源移除 UI（WorkspaceSettingsDialog 数据源 tab）
-- 文件树懒加载（FileTree + useFileTree）
-- 标签栏和标签管理（TabBar + useTabs）
-- 文件查看器基础版（FileViewer，纯文本展示）
-- 添加数据源对话框（AddSourceDialog）
-- 启动恢复标签（WorkspacePage 挂载时恢复）
-- 关闭活动标签后自动选择下一个标签（CloseTab 用例已修复）
+- 工作区创建、编辑、归档、恢复和删除 UI
+- 添加数据源（自动识别 Git/目录）
+- 文件树懒加载浏览
+- 代码查看器（Monaco Editor，语法高亮，只读）
+- Markdown 安全渲染（react-markdown + rehype-sanitize）
+- 敏感文件和二进制文件拦截
+- 全文索引（Tantivy，自动索引扫描文件）
+- 关键词搜索（工作区级，搜索文件名和内容）
+- 标签栏和标签管理
+- 启动恢复标签和工作区状态
+- 移除数据源时级联清理索引和缓存
+
+### 安全特性
+
+- PathGuard 路径安全（9层防御，symlink 解析）
+- 文件系统根路径由后端获取
+- 删除元数据不触碰本地文件
+- Markdown 禁止脚本和不安全 HTML
+- 敏感文件不读取正文
+
+## 剩余缺口
+
+以下功能尚未实现，不影响 v0.1 核心流程：
+
+- 文件监听与增量刷新（手动触发扫描）
+- workspace_settings 的真实使用
+- 大目录分页（当前不设上限，性能风险已记录）
+- 搜索结果高亮（snippet）
 
 ## 基线信息
 
 - 分支：main
-- 当前 HEAD：6736a33
+- 当前 HEAD：2c57429

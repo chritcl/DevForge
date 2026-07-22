@@ -1,8 +1,8 @@
 {
   "version": 1,
   "lastUpdated": "2026-07-22",
-  "currentPhase": "D",
-  "currentWorkPackage": "WP-D01",
+  "currentPhase": "E",
+  "currentWorkPackage": null,
   "phases": {
     "A": {
       "name": "基线收敛",
@@ -37,17 +37,18 @@
     },
     "D": {
       "name": "关键词搜索",
-      "status": "IN PROGRESS",
-      "dependsOn": ["C"],
+      "status": "DONE",
       "workPackages": [
-        { "id": "WP-D01", "name": "添加搜索 Tauri 命令和前端搜索 UI", "status": "IN_PROGRESS", "description": "工作区级关键词搜索，返回文件名/路径/分数，点击结果打开文件" }
+        { "id": "WP-D01", "name": "搜索 Tauri 命令和前端搜索 UI", "status": "DONE", "commit": "2c57429" }
       ]
     },
     "E": {
       "name": "v0.1 收口",
-      "status": "NOT STARTED",
+      "status": "IN PROGRESS",
       "dependsOn": ["B", "C", "D"],
-      "workPackages": []
+      "workPackages": [
+        { "id": "WP-E01", "name": "最终验证和文档更新", "status": "IN_PROGRESS", "description": "全量验证、更新 implementation-status.md、更新 GOAL.md 阶段状态" }
+      ]
     }
   }
 }
