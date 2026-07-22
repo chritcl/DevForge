@@ -3,6 +3,7 @@ use std::sync::Arc;
 use devforge_application::app_info::AppInfo;
 use devforge_application::get_app_info::GetAppInfo;
 use devforge_platform::app_info::PlatformMetadata;
+use devforge_storage::indexer::WorkspaceIndex;
 use devforge_storage::repository::{
     SqliteDocumentRepository, SqliteOpenTabRepository, SqliteSourceRepository,
     SqliteWorkspaceRepository,
@@ -18,6 +19,7 @@ pub(crate) struct AppState {
     source_repo: Arc<SqliteSourceRepository>,
     document_repo: Arc<SqliteDocumentRepository>,
     tab_repo: Arc<SqliteOpenTabRepository>,
+    data_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -29,6 +31,7 @@ impl AppState {
         source_repo: Arc<SqliteSourceRepository>,
         document_repo: Arc<SqliteDocumentRepository>,
         tab_repo: Arc<SqliteOpenTabRepository>,
+        data_dir: std::path::PathBuf,
     ) -> Self {
         Self {
             get_app_info: GetAppInfo::new(platform_metadata, database_status),
@@ -36,12 +39,25 @@ impl AppState {
             source_repo,
             document_repo,
             tab_repo,
+            data_dir,
         }
     }
 
     /// 获取应用信息。
     pub(crate) async fn app_info(&self) -> AppInfo {
         self.get_app_info.execute().await
+    }
+
+    /// 获取工作区索引。
+    ///
+    /// 如果索引目录不存在则创建新索引。
+    pub(crate) fn workspace_index(
+        &self,
+        workspace_id: &str,
+    ) -> Result<WorkspaceIndex, devforge_storage::indexer::IndexError> {
+        let index_dir =
+            devforge_storage::indexer::workspace_index_dir(workspace_id, &self.data_dir);
+        WorkspaceIndex::open(&index_dir)
     }
 
     /// 获取工作区 Repository。
@@ -105,6 +121,7 @@ mod tests {
                     source_repo,
                     document_repo,
                     tab_repo,
+                    data_dir.clone(),
                 );
 
                 let info = state.app_info().await;

@@ -49,12 +49,14 @@ export const commands = {
 	 *  移除数据源
 	 * 
 	 *  注意：移除数据源只删除元数据，不删除源目录。
+	 *  同时清理该数据源的全文索引。
 	 */
 	removeSource: (id: string) => typedError<null, SourceError>(__TAURI_INVOKE("remove_source", { id })),
 	/**
 	 *  扫描数据源
 	 * 
 	 *  后端通过 source_id 从数据库获取可信路径，不接受前端传入的路径。
+	 *  扫描时自动建立全文索引。
 	 */
 	scanSource: (sourceId: string) => typedError<ScanResult, DiscoveryError>(__TAURI_INVOKE("scan_source", { sourceId })),
 	/**  列出文档 */
@@ -73,6 +75,14 @@ export const commands = {
 	listTabs: (workspaceId: string) => typedError<TabDto[], TabError>(__TAURI_INVOKE("list_tabs", { workspaceId })),
 	/**  设置活动标签页 */
 	setActiveTab: (workspaceId: string, tabId: string) => typedError<null, TabError>(__TAURI_INVOKE("set_active_tab", { workspaceId, tabId })),
+	/**  获取工作区的全文索引状态 */
+	getIndexStatus: (workspaceId: string) => typedError<IndexStatusDto, string>(__TAURI_INVOKE("get_index_status", { workspaceId })),
+	/**
+	 *  重建工作区的全文索引
+	 * 
+	 *  清空现有索引，然后对工作区的所有数据源重新扫描和索引。
+	 */
+	rebuildWorkspaceIndex: (workspaceId: string) => typedError<IndexStatusDto, string>(__TAURI_INVOKE("rebuild_workspace_index", { workspaceId })),
 };
 
 /* Types */
@@ -170,6 +180,16 @@ export type FileTreeEntryDto = {
 
 /**  文件树条目类型 */
 export type FileTreeEntryKind = "directory" | "file";
+
+/**  索引状态 DTO */
+export type IndexStatusDto = {
+	/**  工作区 ID */
+	workspace_id: string,
+	/**  索引中的文档数量 */
+	document_count: number,
+	/**  索引目录是否存在 */
+	exists: boolean,
+};
 
 /**  扫描结果 */
 export type ScanResult = {

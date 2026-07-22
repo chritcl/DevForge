@@ -36,6 +36,8 @@ fn create_builder() -> Builder<tauri::Wry> {
         commands::close_tab,
         commands::list_tabs,
         commands::set_active_tab,
+        commands::get_index_status,
+        commands::rebuild_workspace_index,
     ])
 }
 
@@ -78,7 +80,7 @@ async fn initialize_app_state(
         .await
         .context("无法执行 SQLite migration")?;
 
-    let platform_metadata = devforge_platform::app_info::PlatformMetadata::new(version, data_dir);
+    let platform_metadata = devforge_platform::app_info::PlatformMetadata::new(version, data_dir.clone());
 
     let database_status =
         devforge_storage::status::SqliteDatabaseStatus::new(database.pool().clone());
@@ -106,6 +108,7 @@ async fn initialize_app_state(
         source_repo,
         document_repo,
         tab_repo,
+        data_dir,
     ))
 }
 
