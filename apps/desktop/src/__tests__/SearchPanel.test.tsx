@@ -87,6 +87,8 @@ describe("SearchPanel", () => {
           path: "src/main.rs",
           file_name: "main.rs",
           score: 1.5,
+          snippet: "",
+          line_number: 10,
         },
       ],
       isLoading: false,
@@ -101,7 +103,7 @@ describe("SearchPanel", () => {
     expect(resultButton).toBeDefined();
     fireEvent.click(resultButton!);
 
-    expect(handleClick).toHaveBeenCalledWith("doc-1");
+    expect(handleClick).toHaveBeenCalledWith("doc-1", 10);
   });
 
   it("搜索中显示加载状态", () => {

@@ -38,6 +38,8 @@ pub struct IndexSearchHit {
     pub score: f32,
     /// 匹配内容片段
     pub snippet: String,
+    /// 首个匹配位置的行号（从 1 开始）
+    pub line_number: u32,
 }
 
 /// Tantivy 索引管理器
@@ -74,7 +76,7 @@ impl WorkspaceIndex {
         let field_source_id = schema_builder.add_text_field("source_id", STRING | STORED);
         let field_path = schema_builder.add_text_field("path", TEXT | STORED);
         let field_file_name = schema_builder.add_text_field("file_name", TEXT | STORED);
-        let field_content = schema_builder.add_text_field("content", TEXT);
+        let field_content = schema_builder.add_text_field("content", TEXT | STORED);
         let schema = schema_builder.build();
 
         let index = if index_dir.join("meta.json").exists() {
@@ -230,20 +232,33 @@ impl WorkspaceIndex {
                 .unwrap_or("")
                 .to_owned();
 
-            // 生成匹配内容片段
-            let snippet = snippet_generator
-                .snippet_from_doc(&doc)
-                .to_html()
-                .chars()
-                .take(300)
-                .collect();
+            // 生成匹配内容片段并计算行号
+            let snippet_obj = snippet_generator.snippet_from_doc(&doc);
+            let snippet_html: String = snippet_obj.to_html().chars().take(300).collect();
+
+            // 从内容中计算首个匹配位置的行号
+            let line_number =
+                if let Some(content) = doc.get_first(self.field_content).and_then(|v| v.as_str()) {
+                    let fragment = snippet_obj.fragment();
+                    if fragment.is_empty() {
+                        1
+                    } else {
+                        content
+                            .find(fragment)
+                            .map(|pos| content[..pos].lines().count() as u32 + 1)
+                            .unwrap_or(1)
+                    }
+                } else {
+                    1
+                };
 
             results.push(IndexSearchHit {
                 document_id,
                 path,
                 file_name,
                 score,
-                snippet,
+                snippet: snippet_html,
+                line_number,
             });
         }
 

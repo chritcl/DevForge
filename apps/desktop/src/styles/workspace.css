@@ -1174,6 +1174,13 @@
   background: var(--hover-bg);
 }
 
+.search-panel-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .search-panel-result-name {
   font-size: 13px;
   font-weight: 500;
@@ -1181,6 +1188,15 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-panel-result-line {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .search-panel-result-path {

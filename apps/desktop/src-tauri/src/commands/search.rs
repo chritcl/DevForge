@@ -15,6 +15,8 @@ pub struct SearchResultDto {
     pub score: f32,
     /// 匹配内容片段（含高亮标记）
     pub snippet: String,
+    /// 首个匹配位置的行号（从 1 开始）
+    pub line_number: u32,
 }
 
 /// 搜索工作区
@@ -50,6 +52,7 @@ pub async fn search_workspace(
             file_name: hit.file_name,
             score: hit.score,
             snippet: hit.snippet,
+            line_number: hit.line_number,
         })
         .collect();
 

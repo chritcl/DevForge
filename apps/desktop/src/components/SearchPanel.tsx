@@ -4,7 +4,7 @@ import type { SearchResultDto } from "../bindings";
 
 interface SearchPanelProps {
   workspaceId: string;
-  onResultClick: (documentId: string) => void;
+  onResultClick: (documentId: string, lineNumber: number) => void;
 }
 
 export function SearchPanel({ workspaceId, onResultClick }: SearchPanelProps) {
@@ -13,7 +13,7 @@ export function SearchPanel({ workspaceId, onResultClick }: SearchPanelProps) {
 
   const handleResultClick = useCallback(
     (result: SearchResultDto) => {
-      onResultClick(result.document_id);
+      onResultClick(result.document_id, result.line_number);
     },
     [onResultClick],
   );
@@ -52,10 +52,15 @@ export function SearchPanel({ workspaceId, onResultClick }: SearchPanelProps) {
                 key={result.document_id}
                 className="search-panel-result-item"
                 onClick={() => handleResultClick(result)}
-                title={result.path}
+                title={`${result.path}:${result.line_number}`}
               >
-                <div className="search-panel-result-name">
-                  {result.file_name}
+                <div className="search-panel-result-header">
+                  <span className="search-panel-result-name">
+                    {result.file_name}
+                  </span>
+                  <span className="search-panel-result-line">
+                    行 {result.line_number}
+                  </span>
                 </div>
                 <div className="search-panel-result-path">
                   {result.path}

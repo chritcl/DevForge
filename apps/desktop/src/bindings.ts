@@ -222,6 +222,8 @@ export type SearchResultDto = {
 	score: number | null,
 	/**  匹配内容片段（含高亮标记） */
 	snippet: string,
+	/**  首个匹配位置的行号（从 1 开始） */
+	line_number: number,
 };
 
 /**  敏感度 */

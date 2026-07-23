@@ -116,9 +116,9 @@ export function WorkspacePage() {
     [workspaceId, openTab, isArchived]
   );
 
-  // 处理搜索结果点击（通过 document_id 打开标签）
+  // 处理搜索结果点击（通过 document_id 打开标签，并记录行号）
   const handleSearchResultClick = useCallback(
-    async (documentId: string) => {
+    async (documentId: string, lineNumber: number) => {
       if (!workspaceId || isArchived) return;
 
       try {
@@ -127,11 +127,13 @@ export function WorkspacePage() {
           document_id: documentId,
         });
         setUserSelectedTabId(tab.id);
+        // 将行号存储在 URL 参数中，供 FileViewer 使用
+        setSearchParams({ line: String(lineNumber) }, { replace: true });
       } catch (err) {
         console.error("打开标签失败:", err);
       }
     },
-    [workspaceId, openTab, isArchived],
+    [workspaceId, openTab, isArchived, setSearchParams],
   );
 
   // 处理标签点击
