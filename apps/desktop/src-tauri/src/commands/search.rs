@@ -13,6 +13,8 @@ pub struct SearchResultDto {
     pub file_name: String,
     /// 匹配分数（越高越相关）
     pub score: f32,
+    /// 匹配内容片段（含高亮标记）
+    pub snippet: String,
 }
 
 /// 搜索工作区
@@ -47,6 +49,7 @@ pub async fn search_workspace(
             path: hit.path,
             file_name: hit.file_name,
             score: hit.score,
+            snippet: hit.snippet,
         })
         .collect();
 

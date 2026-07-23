@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use tantivy::collector::TopDocs;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Schema, Value, STORED, STRING, TEXT};
+use tantivy::snippet::SnippetGenerator;
 use tantivy::{Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, Term};
 
 /// 索引错误
@@ -207,6 +208,9 @@ impl WorkspaceIndex {
         let query = query_parser.parse_query(query_str)?;
         let top_docs = searcher.search(&query, &TopDocs::with_limit(limit).order_by_score())?;
 
+        // 创建 snippet 生成器
+        let snippet_generator = SnippetGenerator::create(&searcher, &*query, self.field_content)?;
+
         let mut results = Vec::new();
         for (score, doc_address) in top_docs {
             let doc: TantivyDocument = searcher.doc(doc_address)?;
@@ -226,12 +230,20 @@ impl WorkspaceIndex {
                 .unwrap_or("")
                 .to_owned();
 
+            // 生成匹配内容片段
+            let snippet = snippet_generator
+                .snippet_from_doc(&doc)
+                .to_html()
+                .chars()
+                .take(300)
+                .collect();
+
             results.push(IndexSearchHit {
                 document_id,
                 path,
                 file_name,
                 score,
-                snippet: String::new(), // TODO: 实现 snippet 高亮
+                snippet,
             });
         }
 

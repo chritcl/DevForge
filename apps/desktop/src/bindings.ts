@@ -220,6 +220,8 @@ export type SearchResultDto = {
 	file_name: string,
 	/**  匹配分数（越高越相关） */
 	score: number | null,
+	/**  匹配内容片段（含高亮标记） */
+	snippet: string,
 };
 
 /**  敏感度 */

@@ -60,6 +60,12 @@ export function SearchPanel({ workspaceId, onResultClick }: SearchPanelProps) {
                 <div className="search-panel-result-path">
                   {result.path}
                 </div>
+                {result.snippet && (
+                  <div
+                    className="search-panel-result-snippet"
+                    dangerouslySetInnerHTML={{ __html: result.snippet }}
+                  />
+                )}
               </button>
             ))}
           </div>
